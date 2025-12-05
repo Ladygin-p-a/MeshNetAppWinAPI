@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <windowsx.h>
 #include <tchar.h>
 #include "resource.h"
 
@@ -15,16 +16,144 @@ HINSTANCE hInst;
 
 // Forward declarations of functions included in this code module:
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+void InitCPList(HWND);
+int GetCOMPortStrList(HWND);
+
+TCHAR Planets[9][10] =
+{
+    TEXT("Mercury"), TEXT("Venus"), TEXT("Terra"), TEXT("Mars"),
+    TEXT("Jupiter"), TEXT("Saturn"), TEXT("Uranus"), TEXT("Neptune"),
+    TEXT("Pluto??")
+};
+
+TCHAR A[16];
+int  k = 0;
+
+int GetCOMPortStrList(HWND hDlg) {
+
+    DWORD dwIndex;
+
+    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
+
+    //pCOMPortNameList->ResetContent();
+
+    int r = 0;
+    HKEY hkey = NULL;
+    //Открываем раздел реестра, в котором хранится иинформация о COM портах
+    r = RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("HARDWARE\\DEVICEMAP\\SERIALCOMM\\"), 0, KEY_READ, &hkey);
+    if (r != ERROR_SUCCESS)
+        return 0;
+
+    unsigned long CountValues = 0, MaxValueNameLen = 0, MaxValueLen = 0;
+    //Получаем информацию об открытом разделе реестра
+    RegQueryInfoKey(hkey, NULL, NULL, NULL, NULL, NULL, NULL, &CountValues, &MaxValueNameLen, &MaxValueLen, NULL, NULL);
+    ++MaxValueNameLen;
+    //Выделяем память
+    TCHAR* bufferName = NULL, * bufferData = NULL;
+    bufferName = (TCHAR*)malloc(MaxValueNameLen * sizeof(TCHAR));
+    if (!bufferName)
+    {
+        RegCloseKey(hkey);
+        return 0;
+    }
+    bufferData = (TCHAR*)malloc((MaxValueLen + 1) * sizeof(TCHAR));
+    if (!bufferData)
+    {
+        free(bufferName);
+        RegCloseKey(hkey);
+        return 0;
+    }
+
+
+    TCHAR* pCOMPortStrList = (TCHAR*)malloc((CountValues * MaxValueLen + 1) * sizeof(TCHAR));
+    memset(pCOMPortStrList, '\0', (CountValues * MaxValueLen + 1) * sizeof(TCHAR));
+
+    unsigned long NameLen, type, DataLen, count = 0;
+    //Цикл перебора параметров раздела реестра
+    for (unsigned int i = 0; i < CountValues; i++)
+    {
+        NameLen = MaxValueNameLen;
+        DataLen = MaxValueLen;
+        r = RegEnumValue(hkey, i, bufferName, &NameLen, NULL, &type, (LPBYTE)bufferData, &DataLen);
+        if ((r != ERROR_SUCCESS) || (type != REG_SZ))
+            continue;
+
+        //_tprintf(TEXT("%s\n"), bufferData);
+
+        //for (unsigned int ii = 0; ii < _tcslen(bufferData); ii++) {
+
+        size_t len = 0;
+
+        while ((TCHAR) * (bufferData + len) != '\0') {
+            len++;
+        }
+
+        for (unsigned int ii = 0; ii < len; ii++) {
+            TCHAR aaa = (TCHAR) * (bufferData + ii);
+            if (aaa != '\0') {
+                pCOMPortStrList[count] = aaa;
+                count++;
+            }
+
+        }
+
+        pCOMPortStrList[count] = ';';
+        count++;
+
+        //pCOMPortNameList->AddString(bufferData);
+
+        dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)bufferData);
+        //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
+
+        // Send the CB_SETCURSEL message to display an initial item 
+        //  in the selection field  
+        SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
+
+    }
+    pCOMPortStrList[count] = '\0';
+
+    //Освобождаем память
+    free(bufferName);
+    bufferName = 0;
+    free(bufferData);
+    bufferData = 0;
+    //Закрываем раздел реестра
+    RegCloseKey(hkey);
+
+    //return pCOMPortStrList;
+    return 0;
+
+}
 
 INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+
+    
 
     switch (message)
     {
     case WM_INITDIALOG:
 
+        InitCPList(hwndDlg);
         return TRUE;
 
     case WM_COMMAND:
+
+        if (HIWORD(wParam) == CBN_SELCHANGE)
+            // If the user makes a selection from the list:
+            //   Send CB_GETCURSEL message to get the index of the selected list item.
+            //   Send CB_GETLBTEXT message to get the item.
+            //   Display the item in a messagebox.
+        {
+            int ItemIndex = SendMessage((HWND)lParam, (UINT)CB_GETCURSEL,(WPARAM)0, (LPARAM)0);
+            TCHAR  ListItem[256];
+
+            (TCHAR)SendMessage((HWND)lParam, (UINT)CB_GETLBTEXT,(WPARAM)ItemIndex, (LPARAM)ListItem);
+
+            MessageBox(hwndDlg, (LPCWSTR)ListItem, TEXT("Item Selected"), MB_OK);
+
+            return TRUE;
+        }
+
         switch (LOWORD(wParam))
         {
         case IDOK:
@@ -38,8 +167,39 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
     return FALSE;
 }
 
+void InitCPList(HWND hDlg) {
+
+    GetCOMPortStrList(hDlg);
+    
+    /*
+    TCHAR achTemp[256];
+    DWORD dwIndex;
+
+    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
+
+    memset(&A, 0, sizeof(A));
+    for (k = 0; k <= 8; k += 1)
+    {
+        wcscpy_s(A, sizeof(A) / sizeof(TCHAR), (TCHAR*)Planets[k]);
+
+
+        // Добавление строки в ComboBox
+        //так
+        dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)A);
+        //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
+        
+    }
+
+    // Send the CB_SETCURSEL message to display an initial item 
+    //  in the selection field  
+    SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
+    //SendDlgItemMessage(hwndDlg, IDC_CPLIST, CB_SETCURSEL, 0, 0);
+    */
+}
+
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
+    
 
     DialogBox(hInstance, MAKEINTRESOURCE(IDD_MAIN_WND), NULL, MainDlgproc);
 
