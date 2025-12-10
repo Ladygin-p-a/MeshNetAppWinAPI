@@ -3,6 +3,10 @@
 #include <tchar.h>
 #include "resource.h"
 
+#pragma comment(linker,"\"/manifestdependency:type='win32' \
+name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
 // Global variables
 constexpr UINT MAX_SIZE_COMPortName = 12;
 constexpr UINT MAX_SIZE_RegValueName = 255;
@@ -202,6 +206,17 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
         return TRUE;
 
     case WM_COMMAND:
+
+        /*HWND hwnd;
+        hwnd = GetDesktopWindow();
+        HDC hdc;
+        hdc = GetWindowDC(hwnd);
+
+        RECT r;
+        GetClientRect(hwnd, &r);
+
+        DrawText(hdc, TEXT("My Text"), -1, &r, DT_LEFT);
+        */
 
         if (HIWORD(wParam) == CBN_SELCHANGE)
             // If the user makes a selection from the list:
