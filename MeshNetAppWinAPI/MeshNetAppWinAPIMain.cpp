@@ -4,6 +4,8 @@
 #include "resource.h"
 
 // Global variables
+constexpr UINT MAX_SIZE_COMPortName = 12;
+constexpr UINT MAX_SIZE_RegValueName = 255;
 
 // The main window class name.
 static TCHAR szWindowClass[] = _T("DesktopApp");
@@ -18,6 +20,7 @@ HINSTANCE hInst;
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void InitCPList(HWND);
 int GetCOMPortStrList(HWND);
+int InitCOMPortList(HWND);
 
 TCHAR Planets[9][10] =
 {
@@ -28,6 +31,65 @@ TCHAR Planets[9][10] =
 
 TCHAR A[16];
 int  k = 0;
+
+int InitCOMPortList(HWND hDlg) {
+
+    HKEY hKey = 0; //содержит дескриптор ветки реестра
+    LSTATUS lResult;
+
+    DWORD dwIndex;
+
+    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
+
+    lResult = RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("HARDWARE\\DEVICEMAP\\SERIALCOMM\\"), 0, KEY_READ, &hKey);
+
+    if (lResult != ERROR_SUCCESS) {
+        return 0;
+    }
+
+    DWORD cCOMPort; //содержит количество COM портов
+    DWORD MaxLenCOMPortName; //содержит длину самого длинного названия COM порта в символах ANSI без учета нулевого символа
+    DWORD MaxLenCOMPortNameByte; //содержит длину самого длинного названия COM порта в байтах
+
+    lResult = RegQueryInfoKey(hKey, NULL, NULL, NULL, NULL, NULL, NULL, &cCOMPort, &MaxLenCOMPortName, &MaxLenCOMPortNameByte, NULL, NULL);
+
+    if (lResult != ERROR_SUCCESS) {
+        RegCloseKey(hKey);
+        return 0;
+    }
+
+    
+    
+
+    BYTE COMPortName[MAX_SIZE_COMPortName] = {'\0'};//буфер, содержащий имя COM порта
+    TCHAR RegValueName[MAX_SIZE_RegValueName] = { '\0' };//буфер, содержащий имя значения реестра
+    DWORD sizeofRegValueName = MAX_SIZE_RegValueName, sizeofCOMPortName = MAX_SIZE_COMPortName, valueType;
+
+    for (UINT i = 0; i < cCOMPort; i++) {
+
+        COMPortName[0] = '\0';
+        sizeofCOMPortName = MAX_SIZE_COMPortName;
+
+        RegValueName[0] = '\0';
+        sizeofRegValueName = MAX_SIZE_RegValueName;
+
+        lResult = RegEnumValue(hKey, i, RegValueName, &sizeofRegValueName, NULL, &valueType, COMPortName, &sizeofCOMPortName);
+
+        if (lResult != ERROR_SUCCESS || valueType != REG_SZ) {
+            continue;
+        }
+
+        dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)COMPortName);
+        //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
+
+        // Send the CB_SETCURSEL message to display an initial item 
+        //  in the selection field  
+        SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
+
+    }
+
+    RegCloseKey(hKey);
+}
 
 int GetCOMPortStrList(HWND hDlg) {
 
@@ -67,6 +129,9 @@ int GetCOMPortStrList(HWND hDlg) {
 
     TCHAR* pCOMPortStrList = (TCHAR*)malloc((CountValues * MaxValueLen + 1) * sizeof(TCHAR));
     memset(pCOMPortStrList, '\0', (CountValues * MaxValueLen + 1) * sizeof(TCHAR));
+
+    //TCHAR pCOMPortStrList[128];
+    //SecureZeroMemory(pCOMPortStrList, sizeof(pCOMPortStrList));
 
     unsigned long NameLen, type, DataLen, count = 0;
     //Цикл перебора параметров раздела реестра
@@ -169,7 +234,8 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
 void InitCPList(HWND hDlg) {
 
-    GetCOMPortStrList(hDlg);
+    //GetCOMPortStrList(hDlg);
+    InitCOMPortList(hDlg);
     
     /*
     TCHAR achTemp[256];

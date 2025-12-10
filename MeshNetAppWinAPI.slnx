@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="MeshNetAppWinAPI/MeshNetAppWinAPI.vcxproj" />
+  <Project Path="MeshNetAppWinAPI/MeshNetAppWinAPI.vcxproj" Id="8cb24c2f-c86f-453d-a7d3-dc3a57606437" />
 </Solution>
