@@ -77,11 +77,16 @@ int InitCOMPortList(HWND hDlg) {
         RegValueName[0] = '\0';
         sizeofRegValueName = MAX_SIZE_RegValueName;
 
-        lResult = RegEnumValue(hKey, i, RegValueName, &sizeofRegValueName, NULL, &valueType, COMPortName, &sizeofCOMPortName);
+        TCHAR* _RegValueName = (TCHAR*)CoTaskMemAlloc(255 * sizeof(TCHAR));
+
+        lResult = RegEnumValue(hKey, i, _RegValueName, &sizeofRegValueName, NULL, &valueType, COMPortName, &sizeofCOMPortName);
 
         if (lResult != ERROR_SUCCESS || valueType != REG_SZ) {
+            CoTaskMemFree(_RegValueName);
             continue;
         }
+
+        CoTaskMemFree(_RegValueName);
 
         dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)COMPortName);
         //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
