@@ -2,6 +2,7 @@
 #include <windowsx.h>
 #include <tchar.h>
 #include "resource.h"
+#include <strsafe.h>
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
@@ -23,8 +24,26 @@ HINSTANCE hInst;
 // Forward declarations of functions included in this code module:
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void InitCPList(HWND);
-int GetCOMPortStrList(HWND);
+//int GetCOMPortStrList(HWND);
 int InitCOMPortList(HWND);
+
+#define BUFSIZE 255 //ёмкость буфера
+unsigned char bufrd[BUFSIZE], bufwr[BUFSIZE]; //приёмный и передающий буферы
+
+HANDLE COMPort;
+DCB dcb;
+COMMTIMEOUTS timeouts;
+
+OVERLAPPED overlapped;
+int handle; //дескриптор для работы с файлом с помощью библиотеки <io.h>
+bool fl = 0; //флаг, указывающий на успешность операций записи (1 - успешно, 0 - не успешно
+unsigned long counter; //счётчик принятых байтов, обнуляется при каждом открытии порт
+
+HANDLE reader; //дескриптор потока чтения из порта
+DWORD WINAPI ReadThread(LPVOID);
+
+void ReadPrinting(void);
+void CloseCOMPort(void);
 
 TCHAR Planets[9][10] =
 {
@@ -35,6 +54,66 @@ TCHAR Planets[9][10] =
 
 TCHAR A[16];
 int  k = 0;
+
+
+//главная функция потока, реализует приём байтов из COM-порта
+DWORD WINAPI ReadThread(LPVOID)
+{
+    COMSTAT comstat; //структура текущего состояния порта, в данной программе используется для определения количества принятых в порт байтов
+    DWORD btr, temp, mask, signal; //переменная temp используется в качестве заглушки
+
+    overlapped.hEvent = CreateEvent(NULL, true, true, NULL); //создать сигнальный объект-событие для асинхронных операций
+
+    SetCommMask(COMPort, EV_RXCHAR); //установить маску на срабатывание по событию приёма байта в порт
+    while (1) //пока поток не будет прерван, выполняем цикл
+    {
+        WaitCommEvent(COMPort, &mask, &overlapped); //ожидать события приёма байта (это и есть	перекрываемая операция)
+        signal = WaitForSingleObject(overlapped.hEvent, INFINITE); //приостановить поток до прихода байта
+        if (signal == WAIT_OBJECT_0) //если событие прихода байта произошло
+        {
+            if (GetOverlappedResult(COMPort, &overlapped, &temp, true)) //проверяем, успешно ли завершилась перекрываемая операция WaitCommEvent
+                if ((mask & EV_RXCHAR) != 0) //если произошло именно событие прихода байта
+                {
+                    ClearCommError(COMPort, &temp, &comstat); //нужно заполнить структуру COMSTAT
+                    btr = comstat.cbInQue; //и получить из неё количество принятых байтов
+                    if (btr) //если действительно есть байты для чтения
+                    {
+                        ReadFile(COMPort, bufrd, btr, &temp, &overlapped); //прочитать байты из порта в буфер программы
+                        counter += btr; //увеличиваем счётчик байтов
+                        ReadPrinting(); //вызываем функцию для вывода данных на экран и в файл
+                    }
+                }
+        }
+    }
+}
+
+//выводим принятые байты на экран и в файл (если включено) 
+void ReadPrinting()
+{
+    /*CString strname = (CString)bufrd;
+
+    pList1->AddString(strname.GetString());*/
+
+    size_t len = 0;
+
+    while ((TCHAR) * (bufrd + len) != '\0') {
+        len++;
+    }
+
+    TCHAR* pCOMPortStrList1 = (TCHAR*)malloc((len + 1) * sizeof(TCHAR));
+    memset(pCOMPortStrList1, '\0', (len + 1) * sizeof(TCHAR));
+
+
+    for (unsigned int ii = 0; ii < len; ii++) { //len
+        pCOMPortStrList1[ii] = bufrd[ii];
+    }
+
+    //pList1->AddString(pCOMPortStrList1);
+    memset(bufrd, 0, BUFSIZE); //очистить буфер (чтобы данные не накладывались друг на друга)
+
+    free(pCOMPortStrList1);
+    pCOMPortStrList1 = nullptr;
+}
 
 int InitCOMPortList(HWND hDlg) {
 
@@ -52,8 +131,8 @@ int InitCOMPortList(HWND hDlg) {
     }
 
     DWORD cCOMPort; //содержит количество COM портов
-    DWORD MaxLenCOMPortName; //содержит длину самого длинного названия COM порта в символах ANSI без учета нулевого символа
-    DWORD MaxLenCOMPortNameByte; //содержит длину самого длинного названия COM порта в байтах
+    DWORD MaxLenCOMPortName = 0; //содержит длину самого длинного названия COM порта в символах ANSI без учета нулевого символа
+    DWORD MaxLenCOMPortNameByte = 0; //содержит длину самого длинного названия COM порта в байтах
 
     lResult = RegQueryInfoKey(hKey, NULL, NULL, NULL, NULL, NULL, NULL, &cCOMPort, &MaxLenCOMPortName, &MaxLenCOMPortNameByte, NULL, NULL);
 
@@ -62,32 +141,33 @@ int InitCOMPortList(HWND hDlg) {
         return 0;
     }
 
-    
+    MaxLenCOMPortName++;
     
 
-    BYTE COMPortName[MAX_SIZE_COMPortName] = {'\0'};//буфер, содержащий имя COM порта
-    TCHAR RegValueName[MAX_SIZE_RegValueName] = { '\0' };//буфер, содержащий имя значения реестра
-    DWORD sizeofRegValueName = MAX_SIZE_RegValueName, sizeofCOMPortName = MAX_SIZE_COMPortName, valueType;
+    TCHAR* RegValueName = (TCHAR*)CoTaskMemAlloc((MaxLenCOMPortName) * sizeof(TCHAR));
+    BYTE* COMPortName = (BYTE*)CoTaskMemAlloc((MaxLenCOMPortName) * sizeof(BYTE));
+
+    DWORD sizeofRegValueName = MaxLenCOMPortName, sizeofCOMPortName = MaxLenCOMPortName, valueType;
 
     for (UINT i = 0; i < cCOMPort; i++) {
 
-        COMPortName[0] = '\0';
-        sizeofCOMPortName = MAX_SIZE_COMPortName;
+        SecureZeroMemory(RegValueName, (MaxLenCOMPortName) * sizeof(TCHAR));
+        SecureZeroMemory(COMPortName, (MaxLenCOMPortName) * sizeof(BYTE));
 
-        RegValueName[0] = '\0';
-        sizeofRegValueName = MAX_SIZE_RegValueName;
+        //wmemset(RegValueName, L'\0', MaxLenCOMPortName);
+        //memset(COMPortName, '\0', MaxLenCOMPortName);
 
-        TCHAR* _RegValueName = (TCHAR*)CoTaskMemAlloc(255 * sizeof(TCHAR));
 
-        lResult = RegEnumValue(hKey, i, _RegValueName, &sizeofRegValueName, NULL, &valueType, COMPortName, &sizeofCOMPortName);
+        sizeofCOMPortName  = MaxLenCOMPortName;
+        sizeofRegValueName = MaxLenCOMPortName;
+
+        lResult = RegEnumValue(hKey, i, RegValueName, &sizeofRegValueName, NULL, &valueType, COMPortName, &sizeofCOMPortName);
 
         if (lResult != ERROR_SUCCESS || valueType != REG_SZ) {
-            CoTaskMemFree(_RegValueName);
+            
             continue;
-        }
-
-        CoTaskMemFree(_RegValueName);
-
+        }     
+      
         dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)COMPortName);
         //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
 
@@ -95,109 +175,19 @@ int InitCOMPortList(HWND hDlg) {
         //  in the selection field  
         SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
 
+
+
     }
+
+    CoTaskMemFree(RegValueName);
+    CoTaskMemFree(COMPortName);
+
+    RegValueName = nullptr;
+    COMPortName  = nullptr;
 
     RegCloseKey(hKey);
 }
 
-int GetCOMPortStrList(HWND hDlg) {
-
-    DWORD dwIndex;
-
-    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
-
-    //pCOMPortNameList->ResetContent();
-
-    int r = 0;
-    HKEY hkey = NULL;
-    //Открываем раздел реестра, в котором хранится иинформация о COM портах
-    r = RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("HARDWARE\\DEVICEMAP\\SERIALCOMM\\"), 0, KEY_READ, &hkey);
-    if (r != ERROR_SUCCESS)
-        return 0;
-
-    unsigned long CountValues = 0, MaxValueNameLen = 0, MaxValueLen = 0;
-    //Получаем информацию об открытом разделе реестра
-    RegQueryInfoKey(hkey, NULL, NULL, NULL, NULL, NULL, NULL, &CountValues, &MaxValueNameLen, &MaxValueLen, NULL, NULL);
-    ++MaxValueNameLen;
-    //Выделяем память
-    TCHAR* bufferName = NULL, * bufferData = NULL;
-    bufferName = (TCHAR*)malloc(MaxValueNameLen * sizeof(TCHAR));
-    if (!bufferName)
-    {
-        RegCloseKey(hkey);
-        return 0;
-    }
-    bufferData = (TCHAR*)malloc((MaxValueLen + 1) * sizeof(TCHAR));
-    if (!bufferData)
-    {
-        free(bufferName);
-        RegCloseKey(hkey);
-        return 0;
-    }
-
-
-    TCHAR* pCOMPortStrList = (TCHAR*)malloc((CountValues * MaxValueLen + 1) * sizeof(TCHAR));
-    memset(pCOMPortStrList, '\0', (CountValues * MaxValueLen + 1) * sizeof(TCHAR));
-
-    //TCHAR pCOMPortStrList[128];
-    //SecureZeroMemory(pCOMPortStrList, sizeof(pCOMPortStrList));
-
-    unsigned long NameLen, type, DataLen, count = 0;
-    //Цикл перебора параметров раздела реестра
-    for (unsigned int i = 0; i < CountValues; i++)
-    {
-        NameLen = MaxValueNameLen;
-        DataLen = MaxValueLen;
-        r = RegEnumValue(hkey, i, bufferName, &NameLen, NULL, &type, (LPBYTE)bufferData, &DataLen);
-        if ((r != ERROR_SUCCESS) || (type != REG_SZ))
-            continue;
-
-        //_tprintf(TEXT("%s\n"), bufferData);
-
-        //for (unsigned int ii = 0; ii < _tcslen(bufferData); ii++) {
-
-        size_t len = 0;
-
-        while ((TCHAR) * (bufferData + len) != '\0') {
-            len++;
-        }
-
-        for (unsigned int ii = 0; ii < len; ii++) {
-            TCHAR aaa = (TCHAR) * (bufferData + ii);
-            if (aaa != '\0') {
-                pCOMPortStrList[count] = aaa;
-                count++;
-            }
-
-        }
-
-        pCOMPortStrList[count] = ';';
-        count++;
-
-        //pCOMPortNameList->AddString(bufferData);
-
-        dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)bufferData);
-        //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
-
-        // Send the CB_SETCURSEL message to display an initial item 
-        //  in the selection field  
-        SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
-
-    }
-    pCOMPortStrList[count] = '\0';
-
-    //Освобождаем память
-    free(bufferName);
-    bufferName = 0;
-    free(bufferData);
-    bufferData = 0;
-    //Закрываем раздел реестра
-    RegCloseKey(hkey);
-
-    //return pCOMPortStrList;
-    return 0;
-
-}
 
 INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
@@ -207,7 +197,8 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
     {
     case WM_INITDIALOG:
 
-        InitCPList(hwndDlg);
+        //InitCPList(hwndDlg);
+        InitCOMPortList(hwndDlg);
         return TRUE;
 
     case WM_COMMAND:
@@ -234,7 +225,87 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
             (TCHAR)SendMessage((HWND)lParam, (UINT)CB_GETLBTEXT,(WPARAM)ItemIndex, (LPARAM)ListItem);
 
-            MessageBox(hwndDlg, (LPCWSTR)ListItem, TEXT("Item Selected"), MB_OK);
+
+            //MessageBox(hwndDlg, (LPCWSTR)ListItem, TEXT("Item Selected"), MB_OK);
+
+            /*
+            CString str1, str2 = L"\\\\.\\";
+            //MessageBox(str1, MB_OK);
+
+            str2 += str1;
+            */
+
+            LPCTSTR a1 = L"НЕ ОТКРЫТ", a2 = L"ОТКРЫТ";
+            LPCTSTR str1 = TEXT("\\\\.\\");
+
+            LPTSTR str2 = (LPTSTR)CoTaskMemAlloc((20) * sizeof(LPTSTR));
+
+            StringCbCopy(str2, (20) * sizeof(LPTSTR), str1);
+
+            StringCbCat(str2, (20) * sizeof(LPTSTR), (LPCTSTR)ListItem);
+
+            counter = 0;
+
+            COMPort = CreateFile(str2, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+                FILE_FLAG_OVERLAPPED, NULL);
+
+            if (COMPort == INVALID_HANDLE_VALUE) //если ошибка открытия порта
+            {
+
+                MessageBox(hwndDlg, a1, TEXT("INFO"), MB_OK);
+
+            }
+            else {
+
+
+                dcb.DCBlength = sizeof(DCB); //в первое поле структуры DCB необходимо занести её длину, она будет использоваться функциями настройки порта для контроля корректности структуры
+                //считать структуру DCB из порта
+                if (!GetCommState(COMPort, &dcb)) //если не удалось - закрыть порт и вывести сообщение об ошибке в строке  состояния
+                {
+                }
+
+
+                //инициализация структуры DCB 
+                dcb.BaudRate = CBR_115200; //задаём скорость передачи 115200 бод
+
+                dcb.fBinary = TRUE; //включаем двоичный режим обмена		
+                dcb.fOutxCtsFlow = FALSE; //выключаем режим слежения за сигналом CTS
+                dcb.fOutxDsrFlow = FALSE; //выключаем режим слежения за сигналом DSR
+                dcb.fDtrControl = DTR_CONTROL_DISABLE; //отключаем использование линии DTR
+                dcb.fDsrSensitivity = FALSE; //отключаем восприимчивость драйвера к состоянию линии DSR
+                dcb.fNull = FALSE; //разрешить приём нулевых байтов
+                dcb.fRtsControl = RTS_CONTROL_DISABLE; //отключаем использование линии RTS
+                dcb.fAbortOnError = FALSE; //отключаем остановку всех операций чтения/записи при ошибке
+                dcb.ByteSize = 8; //задаём 8 бит в байте
+                dcb.Parity = 0; //отключаем проверку чётности
+                dcb.StopBits = 0; //задаём один стоп-бит
+
+                //загрузить структуру DCB в порт
+                if (!SetCommState(COMPort, &dcb)) //если не удалось - закрыть порт и вывести сообщение об ошибке в строке состояния
+                {
+                }
+
+
+
+                //установить таймауты
+                timeouts.ReadIntervalTimeout = 0; //таймаут между двумя символами
+                timeouts.ReadTotalTimeoutMultiplier = 0; //общий таймаут операции чтения
+                timeouts.ReadTotalTimeoutConstant = 0; //константа для общего таймаута операции чтения
+                timeouts.WriteTotalTimeoutMultiplier = 0; //общий таймаут операции записи
+                timeouts.WriteTotalTimeoutConstant = 0; //константа для общего таймаута операции записи И записываем структуру таймаутов в порт :
+                //записать структуру таймаутов в порт
+                if (!SetCommTimeouts(COMPort, &timeouts)) //если не удалось - закрыть порт и вывести сообщение обошибке в строке состояния
+                {
+
+                }
+
+                SetupComm(COMPort, 2000, 2000);
+
+                MessageBox(hwndDlg, a2, TEXT("INFO"), MB_OK);
+                reader = CreateThread(NULL, 0, ReadThread, NULL, 0, NULL);
+            }
+
+            CoTaskMemFree(str2);
 
             return TRUE;
         }
@@ -255,7 +326,7 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 void InitCPList(HWND hDlg) {
 
     //GetCOMPortStrList(hDlg);
-    InitCOMPortList(hDlg);
+    
     
     /*
     TCHAR achTemp[256];
@@ -400,4 +471,103 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
 
     return 0;
+}*/
+
+/*int GetCOMPortStrList(HWND hDlg) {
+
+    DWORD dwIndex;
+
+    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
+
+    //pCOMPortNameList->ResetContent();
+
+    int r = 0;
+    HKEY hkey = NULL;
+    //Открываем раздел реестра, в котором хранится иинформация о COM портах
+    r = RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("HARDWARE\\DEVICEMAP\\SERIALCOMM\\"), 0, KEY_READ, &hkey);
+    if (r != ERROR_SUCCESS)
+        return 0;
+
+    unsigned long CountValues = 0, MaxValueNameLen = 0, MaxValueLen = 0;
+    //Получаем информацию об открытом разделе реестра
+    RegQueryInfoKey(hkey, NULL, NULL, NULL, NULL, NULL, NULL, &CountValues, &MaxValueNameLen, &MaxValueLen, NULL, NULL);
+    ++MaxValueNameLen;
+    //Выделяем память
+    TCHAR* bufferName = NULL, * bufferData = NULL;
+    bufferName = (TCHAR*)malloc(MaxValueNameLen * sizeof(TCHAR));
+    if (!bufferName)
+    {
+        RegCloseKey(hkey);
+        return 0;
+    }
+    bufferData = (TCHAR*)malloc((MaxValueLen + 1) * sizeof(TCHAR));
+    if (!bufferData)
+    {
+        free(bufferName);
+        RegCloseKey(hkey);
+        return 0;
+    }
+
+
+    TCHAR* pCOMPortStrList = (TCHAR*)malloc((CountValues * MaxValueLen + 1) * sizeof(TCHAR));
+    memset(pCOMPortStrList, '\0', (CountValues * MaxValueLen + 1) * sizeof(TCHAR));
+
+    //TCHAR pCOMPortStrList[128];
+    //SecureZeroMemory(pCOMPortStrList, sizeof(pCOMPortStrList));
+
+    unsigned long NameLen, type, DataLen, count = 0;
+    //Цикл перебора параметров раздела реестра
+    for (unsigned int i = 0; i < CountValues; i++)
+    {
+        NameLen = MaxValueNameLen;
+        DataLen = MaxValueLen;
+        r = RegEnumValue(hkey, i, bufferName, &NameLen, NULL, &type, (LPBYTE)bufferData, &DataLen);
+        if ((r != ERROR_SUCCESS) || (type != REG_SZ))
+            continue;
+
+        //_tprintf(TEXT("%s\n"), bufferData);
+
+        //for (unsigned int ii = 0; ii < _tcslen(bufferData); ii++) {
+
+        size_t len = 0;
+
+        while ((TCHAR) * (bufferData + len) != '\0') {
+            len++;
+        }
+
+        for (unsigned int ii = 0; ii < len; ii++) {
+            TCHAR aaa = (TCHAR) * (bufferData + ii);
+            if (aaa != '\0') {
+                pCOMPortStrList[count] = aaa;
+                count++;
+            }
+
+        }
+
+        pCOMPortStrList[count] = ';';
+        count++;
+
+        //pCOMPortNameList->AddString(bufferData);
+
+        dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)bufferData);
+        //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
+
+        // Send the CB_SETCURSEL message to display an initial item 
+        //  in the selection field  
+        SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
+
+    }
+    pCOMPortStrList[count] = '\0';
+
+    //Освобождаем память
+    free(bufferName);
+    bufferName = 0;
+    free(bufferData);
+    bufferData = 0;
+    //Закрываем раздел реестра
+    RegCloseKey(hkey);
+
+    //return pCOMPortStrList;
+    return 0;
+
 }*/
