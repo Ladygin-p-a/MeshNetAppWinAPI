@@ -24,9 +24,12 @@ HINSTANCE hInst;
 
 // Forward declarations of functions included in this code module:
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
-void InitCPList(HWND);
+
 //int GetCOMPortStrList(HWND);
-int InitCOMPortList(HWND);
+int CALLBACK InitCOMPortList(HWND, BYTE*);//получает список компортов
+DWORD WINAPI ReadThread(LPVOID);
+void ReadPrinting(void);
+void CloseCOMPort(void);
 
 #define BUFSIZE 255 //ёмкость буфера
 unsigned char bufrd[BUFSIZE], bufwr[BUFSIZE]; //приёмный и передающий буферы
@@ -41,29 +44,23 @@ bool fl = 0; //флаг, указывающий на успешность операций записи (1 - успешно, 0 -
 unsigned long counter; //счётчик принятых байтов, обнуляется при каждом открытии порт
 
 HANDLE reader; //дескриптор потока чтения из порта
-DWORD WINAPI ReadThread(LPVOID);
 
-int CALLBACK ShowMSG(int, HWND);
-
-void ReadPrinting(void);
-void CloseCOMPort(void);
-
-_ComPort::COMPort clsCOMPort;
-
-TCHAR Planets[9][10] =
-{
-    TEXT("Mercury"), TEXT("Venus"), TEXT("Terra"), TEXT("Mars"),
-    TEXT("Jupiter"), TEXT("Saturn"), TEXT("Uranus"), TEXT("Neptune"),
-    TEXT("Pluto??")
-};
-
-TCHAR A[16];
-int  k = 0;
+_ComPort_::COMPortClass clsCOMPort;
 
 
-int CALLBACK ShowMSG(int a, HWND hwndDlg) {
+int CALLBACK InitCOMPortList(HWND hDlg, BYTE* COMPortName) {
 
-    MessageBox(hwndDlg, TEXT("!!!!!!!!!!!!"), TEXT("this message from ShowMSG"), MB_OK);
+    DWORD dwIndex;
+
+    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
+
+    dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)COMPortName);
+    //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
+
+    // Send the CB_SETCURSEL message to display an initial item 
+    //  in the selection field  
+    SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
+    
     return 0;
 
 }
@@ -127,90 +124,16 @@ void ReadPrinting()
     pCOMPortStrList1 = nullptr;
 }
 
-int InitCOMPortList(HWND hDlg) {
 
-    HKEY hKey = 0; //содержит дескриптор ветки реестра
-    LSTATUS lResult;
-
-    DWORD dwIndex;
-
-    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
-
-    lResult = RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("HARDWARE\\DEVICEMAP\\SERIALCOMM\\"), 0, KEY_READ, &hKey);
-
-    if (lResult != ERROR_SUCCESS) {
-        return 0;
-    }
-
-    DWORD cCOMPort; //содержит количество COM портов
-    DWORD MaxLenCOMPortName = 0; //содержит длину самого длинного названия COM порта в символах ANSI без учета нулевого символа
-    DWORD MaxLenCOMPortNameByte = 0; //содержит длину самого длинного названия COM порта в байтах
-
-    lResult = RegQueryInfoKey(hKey, NULL, NULL, NULL, NULL, NULL, NULL, &cCOMPort, &MaxLenCOMPortName, &MaxLenCOMPortNameByte, NULL, NULL);
-
-    if (lResult != ERROR_SUCCESS) {
-        RegCloseKey(hKey);
-        return 0;
-    }
-
-    MaxLenCOMPortName++;
-    
-
-    TCHAR* RegValueName = (TCHAR*)CoTaskMemAlloc((MaxLenCOMPortName) * sizeof(TCHAR));
-    BYTE* COMPortName = (BYTE*)CoTaskMemAlloc((MaxLenCOMPortName) * sizeof(BYTE));
-
-    DWORD sizeofRegValueName = MaxLenCOMPortName, sizeofCOMPortName = MaxLenCOMPortName, valueType;
-
-    for (UINT i = 0; i < cCOMPort; i++) {
-
-        SecureZeroMemory(RegValueName, (MaxLenCOMPortName) * sizeof(TCHAR));
-        SecureZeroMemory(COMPortName, (MaxLenCOMPortName) * sizeof(BYTE));
-
-        //wmemset(RegValueName, L'\0', MaxLenCOMPortName);
-        //memset(COMPortName, '\0', MaxLenCOMPortName);
-
-
-        sizeofCOMPortName  = MaxLenCOMPortName;
-        sizeofRegValueName = MaxLenCOMPortName;
-
-        lResult = RegEnumValue(hKey, i, RegValueName, &sizeofRegValueName, NULL, &valueType, COMPortName, &sizeofCOMPortName);
-
-        if (lResult != ERROR_SUCCESS || valueType != REG_SZ) {
-            
-            continue;
-        }     
-      
-        dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)COMPortName);
-        //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
-
-        // Send the CB_SETCURSEL message to display an initial item 
-        //  in the selection field  
-        SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
-
-
-
-    }
-
-    CoTaskMemFree(RegValueName);
-    CoTaskMemFree(COMPortName);
-
-    RegValueName = nullptr;
-    COMPortName  = nullptr;
-
-    RegCloseKey(hKey);
-}
 
 
 INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
-    
-
     switch (message)
     {
     case WM_INITDIALOG:
-
-        //InitCPList(hwndDlg);
-        InitCOMPortList(hwndDlg);
+        
+        clsCOMPort.InitCOMPortList(InitCOMPortList, hwndDlg);
         return TRUE;
 
     case WM_COMMAND:
@@ -240,46 +163,12 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
             //MessageBox(hwndDlg, (LPCWSTR)ListItem, TEXT("Item Selected"), MB_OK);
 
-            /*
-            CString str1, str2 = L"\\\\.\\";
-            //MessageBox(str1, MB_OK);
+            BOOL res = clsCOMPort.OpenCOMPort(ListItem, COMPort);
+            if (!res) {
 
-            str2 += str1;
-            */
+                MessageBox(hwndDlg, TEXT("НЕ УДАЛОСЬ ОТКРЫТЬ ВЫБРАННЫЙ COM ПОРТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
 
-            clsCOMPort.func(ShowMSG, 666, hwndDlg);
-
-            LPCTSTR a1 = L"НЕ ОТКРЫТ", a2 = L"ОТКРЫТ";
-            LPCTSTR str1 = TEXT("\\\\.\\");
-
-            size_t stLen_ListItem = 0, stLen_str1 = 0, stTotalLen = 0;
-
-            StringCbLength(ListItem, 256, &stLen_ListItem);
-            StringCbLength(str1, 256, &stLen_str1);
-
-            stLen_str1 += sizeof(TCHAR);
-            stLen_ListItem += sizeof(TCHAR);
-
-            stTotalLen = stLen_str1 + stLen_ListItem;
-
-            LPTSTR str2 = (LPTSTR)CoTaskMemAlloc(stTotalLen);
-
-            StringCbCopy(str2, stLen_str1, str1);
-
-            StringCbCat(str2, stTotalLen, (LPCTSTR)ListItem);
-
-            counter = 0;
-
-            COMPort = CreateFile(str2, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
-                FILE_FLAG_OVERLAPPED, NULL);
-
-            if (COMPort == INVALID_HANDLE_VALUE) //если ошибка открытия порта
-            {
-
-                MessageBox(hwndDlg, a1, TEXT("INFO"), MB_OK);
-
-            }
-            else {
+            } else {
 
 
                 dcb.DCBlength = sizeof(DCB); //в первое поле структуры DCB необходимо занести её длину, она будет использоваться функциями настройки порта для контроля корректности структуры
@@ -325,11 +214,9 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
                 SetupComm(COMPort, 2000, 2000);
 
-                MessageBox(hwndDlg, a2, TEXT("INFO"), MB_OK);
+                MessageBox(hwndDlg, TEXT("ПОРТ УСПЕШНО ОТКРЫТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
                 reader = CreateThread(NULL, 0, ReadThread, NULL, 0, NULL);
-            }
-
-            CoTaskMemFree(str2);
+            }            
 
             return TRUE;
         }
@@ -345,37 +232,6 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
         }
     }
     return FALSE;
-}
-
-void InitCPList(HWND hDlg) {
-
-    //GetCOMPortStrList(hDlg);
-    
-    
-    /*
-    TCHAR achTemp[256];
-    DWORD dwIndex;
-
-    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
-
-    memset(&A, 0, sizeof(A));
-    for (k = 0; k <= 8; k += 1)
-    {
-        wcscpy_s(A, sizeof(A) / sizeof(TCHAR), (TCHAR*)Planets[k]);
-
-
-        // Добавление строки в ComboBox
-        //так
-        dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)A);
-        //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
-        
-    }
-
-    // Send the CB_SETCURSEL message to display an initial item 
-    //  in the selection field  
-    SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
-    //SendDlgItemMessage(hwndDlg, IDC_CPLIST, CB_SETCURSEL, 0, 0);
-    */
 }
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)

@@ -1,11 +1,12 @@
 #pragma once
 #include <windows.h>
 
-namespace _ComPort {
+namespace _ComPort_ {
 
-	class COMPort
+	class COMPortClass
 	{
-	public:
-		int	func(int (*)(int, HWND), int, HWND);
+	public:		
+		int InitCOMPortList(int (*)(HWND, BYTE*), HWND);
+		int OpenCOMPort(LPTSTR, HANDLE&);
 	};
 }
