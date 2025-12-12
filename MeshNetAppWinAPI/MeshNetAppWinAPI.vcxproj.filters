@@ -18,9 +18,15 @@
     <ClCompile Include="MeshNetAppWinAPIMain.cpp">
       <Filter>Файлы ресурсов</Filter>
     </ClCompile>
+    <ClCompile Include="COMPort.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="COMPort.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
   </ItemGroup>

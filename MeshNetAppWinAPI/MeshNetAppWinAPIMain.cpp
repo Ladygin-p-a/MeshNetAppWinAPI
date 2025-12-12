@@ -3,6 +3,7 @@
 #include <tchar.h>
 #include "resource.h"
 #include <strsafe.h>
+#include "COMPort.h"
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
@@ -42,8 +43,12 @@ unsigned long counter; //счётчик принятых байтов, обнуляется при каждом открытии
 HANDLE reader; //дескриптор потока чтения из порта
 DWORD WINAPI ReadThread(LPVOID);
 
+int CALLBACK ShowMSG(int, HWND);
+
 void ReadPrinting(void);
 void CloseCOMPort(void);
+
+_ComPort::COMPort clsCOMPort;
 
 TCHAR Planets[9][10] =
 {
@@ -55,6 +60,13 @@ TCHAR Planets[9][10] =
 TCHAR A[16];
 int  k = 0;
 
+
+int CALLBACK ShowMSG(int a, HWND hwndDlg) {
+
+    MessageBox(hwndDlg, TEXT("!!!!!!!!!!!!"), TEXT("this message from ShowMSG"), MB_OK);
+    return 0;
+
+}
 
 //главная функция потока, реализует приём байтов из COM-порта
 DWORD WINAPI ReadThread(LPVOID)
@@ -221,7 +233,7 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
             //   Display the item in a messagebox.
         {
             int ItemIndex = SendMessage((HWND)lParam, (UINT)CB_GETCURSEL,(WPARAM)0, (LPARAM)0);
-            TCHAR  ListItem[256];
+            TCHAR  ListItem[10];
 
             (TCHAR)SendMessage((HWND)lParam, (UINT)CB_GETLBTEXT,(WPARAM)ItemIndex, (LPARAM)ListItem);
 
@@ -235,14 +247,26 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
             str2 += str1;
             */
 
+            clsCOMPort.func(ShowMSG, 666, hwndDlg);
+
             LPCTSTR a1 = L"НЕ ОТКРЫТ", a2 = L"ОТКРЫТ";
             LPCTSTR str1 = TEXT("\\\\.\\");
 
-            LPTSTR str2 = (LPTSTR)CoTaskMemAlloc((20) * sizeof(LPTSTR));
+            size_t stLen_ListItem = 0, stLen_str1 = 0, stTotalLen = 0;
 
-            StringCbCopy(str2, (20) * sizeof(LPTSTR), str1);
+            StringCbLength(ListItem, 256, &stLen_ListItem);
+            StringCbLength(str1, 256, &stLen_str1);
 
-            StringCbCat(str2, (20) * sizeof(LPTSTR), (LPCTSTR)ListItem);
+            stLen_str1 += sizeof(TCHAR);
+            stLen_ListItem += sizeof(TCHAR);
+
+            stTotalLen = stLen_str1 + stLen_ListItem;
+
+            LPTSTR str2 = (LPTSTR)CoTaskMemAlloc(stTotalLen);
+
+            StringCbCopy(str2, stLen_str1, str1);
+
+            StringCbCat(str2, stTotalLen, (LPCTSTR)ListItem);
 
             counter = 0;
 

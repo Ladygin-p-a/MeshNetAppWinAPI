@@ -127,9 +127,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="COMPort.cpp" />
     <ClCompile Include="MeshNetAppWinAPIMain.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="COMPort.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
