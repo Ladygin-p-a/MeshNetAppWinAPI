@@ -27,8 +27,9 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
 //int GetCOMPortStrList(HWND);
 int CALLBACK InitCOMPortList(HWND, BYTE*);//получает список компортов
-DWORD WINAPI ReadThread(LPVOID);
-void ReadPrinting(void);
+int CALLBACK AddCHAT(HWND, BYTE*);
+DWORD WINAPI ReadThread(LPVOID, HWND);
+void ReadPrinting(HWND, BYTE*);
 void CloseCOMPort(void);
 
 #define BUFSIZE 255 //ёмкость буфера
@@ -42,11 +43,54 @@ OVERLAPPED overlapped;
 int handle; //дескриптор для работы с файлом с помощью библиотеки <io.h>
 bool fl = 0; //флаг, указывающий на успешность операций записи (1 - успешно, 0 - не успешно
 unsigned long counter; //счётчик принятых байтов, обнуляется при каждом открытии порт
+int countStr = 0;
 
 HANDLE reader; //дескриптор потока чтения из порта
 
 _ComPort_::COMPortClass clsCOMPort;
 
+typedef struct
+{
+    TCHAR achName[MAX_PATH];
+    TCHAR achPosition[12];
+    int nGamesPlayed;
+    int nGoalsScored;
+    BYTE name[12];
+} Player;
+
+Player Roster[] =
+{
+    {TEXT("Haas, Jonathan"), TEXT("Midfield"), 18, 4, "AAA"},
+    {TEXT("Pai, Jyothi"), TEXT("Forward"), 36, 12, "BBB" },
+    {TEXT("Hanif, Kerim"), TEXT("Back"), 26, 0, "CCC" },
+    {TEXT("Anderberg, Michael"), TEXT("Back"), 24, 2, "DDD" },
+    {TEXT("Jelitto, Jacek"), TEXT("Midfield"), 26, 3, "EEE" },
+    {TEXT("Raposo, Rui"), TEXT("Back"), 24, 3, "FFF"},
+    {TEXT("Joseph, Brad"), TEXT("Forward"), 13, 3, "GGG" },
+    {TEXT("Bouchard, Thomas"), TEXT("Forward"), 28, 5, "KKK" },
+    {TEXT("Salmre, Ivo "), TEXT("Midfield"), 27, 7, "LLL" },
+    {TEXT("Camp, David"), TEXT("Midfield"), 22, 3, "OOO" },
+    {TEXT("Kohl, Franz"), TEXT("Goalkeeper"), 17, 0, "MMM" },
+};
+
+typedef struct MyData {
+    HWND val1;
+    int val2;
+} MYDATA, * PMYDATA;
+
+PMYDATA pmydata;
+
+
+
+int CALLBACK AddCHAT(HWND hDlg, BYTE* _bufrd) {
+
+    ReadPrinting(hDlg, _bufrd);
+
+    countStr++;
+
+    return 0;
+
+}
 
 int CALLBACK InitCOMPortList(HWND hDlg, BYTE* COMPortName) {
 
@@ -66,10 +110,14 @@ int CALLBACK InitCOMPortList(HWND hDlg, BYTE* COMPortName) {
 }
 
 //главная функция потока, реализует приём байтов из COM-порта
-DWORD WINAPI ReadThread(LPVOID)
+DWORD WINAPI ReadThread(LPVOID hwndDlg)
 {
     COMSTAT comstat; //структура текущего состояния порта, в данной программе используется для определения количества принятых в порт байтов
     DWORD btr, temp, mask, signal; //переменная temp используется в качестве заглушки
+
+    PMYDATA pDataArray;
+
+    pDataArray = (PMYDATA)hwndDlg;
 
     overlapped.hEvent = CreateEvent(NULL, true, true, NULL); //создать сигнальный объект-событие для асинхронных операций
 
@@ -89,7 +137,8 @@ DWORD WINAPI ReadThread(LPVOID)
                     {
                         ReadFile(COMPort, bufrd, btr, &temp, &overlapped); //прочитать байты из порта в буфер программы
                         counter += btr; //увеличиваем счётчик байтов
-                        ReadPrinting(); //вызываем функцию для вывода данных на экран и в файл
+                        //ReadPrinting(); //вызываем функцию для вывода данных на экран и в файл
+                        clsCOMPort.GetMSG(AddCHAT, pDataArray->val1, bufrd);
                     }
                 }
         }
@@ -97,7 +146,7 @@ DWORD WINAPI ReadThread(LPVOID)
 }
 
 //выводим принятые байты на экран и в файл (если включено) 
-void ReadPrinting()
+void ReadPrinting(HWND hDlg, BYTE *bufrd)
 {
     /*CString strname = (CString)bufrd;
 
@@ -118,6 +167,16 @@ void ReadPrinting()
     }
 
     //pList1->AddString(pCOMPortStrList1);
+
+    HWND hwndList = GetDlgItem(hDlg, IDC_CHAT);
+
+    int pos = (int)SendMessage(hwndList, LB_ADDSTRING, 0,
+        (LPARAM)pCOMPortStrList1);
+    // Set the array index of the player as item data.
+    // This enables us to retrieve the item from the array
+    // even after the items are sorted by the list box.
+    SendMessage(hwndList, LB_SETITEMDATA, pos, (LPARAM)countStr);
+
     memset(bufrd, 0, BUFSIZE); //очистить буфер (чтобы данные не накладывались друг на друга)
 
     free(pCOMPortStrList1);
@@ -134,6 +193,12 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_INITDIALOG:
         
         clsCOMPort.InitCOMPortList(InitCOMPortList, hwndDlg);
+
+        for (int i = 0; i < ARRAYSIZE(Roster); i++)
+        {
+            clsCOMPort.GetMSG(AddCHAT, hwndDlg, Roster[i].name);
+        }
+
         return TRUE;
 
     case WM_COMMAND:
@@ -214,8 +279,13 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
                 SetupComm(COMPort, 2000, 2000);
 
+                pmydata = (PMYDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+                    sizeof(MYDATA));
+
+                pmydata->val1 = hwndDlg;
+
                 MessageBox(hwndDlg, TEXT("ПОРТ УСПЕШНО ОТКРЫТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
-                reader = CreateThread(NULL, 0, ReadThread, NULL, 0, NULL);
+                reader = CreateThread(NULL, 0, ReadThread, pmydata, 0, NULL);
             }            
 
             return TRUE;

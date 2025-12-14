@@ -4,6 +4,13 @@
 
 using namespace _ComPort_;
 
+int COMPortClass::GetMSG(int(*_callBackFunc)(HWND, BYTE*), HWND hDlg, BYTE* _bufrd) {
+
+    _callBackFunc(hDlg, _bufrd);
+
+    return 0;
+}
+
 BOOL COMPortClass::OpenCOMPort(LPTSTR nameCOMPort, HANDLE& mCOMPort) {
     
     LPCTSTR pref = TEXT("\\\\.\\");

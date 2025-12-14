@@ -7,6 +7,7 @@ namespace _ComPort_ {
 	{
 	public:		
 		int InitCOMPortList(int (*)(HWND, BYTE*), HWND);
+		int GetMSG(int (*)(HWND, BYTE*), HWND, BYTE*);
 		int OpenCOMPort(LPTSTR, HANDLE&);
 	};
 }
