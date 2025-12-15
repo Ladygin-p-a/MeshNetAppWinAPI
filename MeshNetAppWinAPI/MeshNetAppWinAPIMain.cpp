@@ -4,6 +4,7 @@
 #include "resource.h"
 #include <strsafe.h>
 #include "COMPort.h"
+#include <mbstring.h>
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
@@ -73,12 +74,11 @@ Player Roster[] =
     {TEXT("Kohl, Franz"), TEXT("Goalkeeper"), 17, 0, "MMM" },
 };
 
-typedef struct MyData {
-    HWND val1;
-    int val2;
-} MYDATA, * PMYDATA;
+typedef struct hWNDData {
+    HWND hWND_CHAT;
+} HWNDDATA, *PHWNDDATA;
 
-PMYDATA pmydata;
+PHWNDDATA phWNDData;
 
 
 
@@ -115,9 +115,9 @@ DWORD WINAPI ReadThread(LPVOID hwndDlg)
     COMSTAT comstat; //структура текущего состояния порта, в данной программе используется для определения количества принятых в порт байтов
     DWORD btr, temp, mask, signal; //переменная temp используется в качестве заглушки
 
-    PMYDATA pDataArray;
+    PHWNDDATA phWNDData;
 
-    pDataArray = (PMYDATA)hwndDlg;
+    phWNDData = (PHWNDDATA)hwndDlg;
 
     overlapped.hEvent = CreateEvent(NULL, true, true, NULL); //создать сигнальный объект-событие для асинхронных операций
 
@@ -138,40 +138,37 @@ DWORD WINAPI ReadThread(LPVOID hwndDlg)
                         ReadFile(COMPort, bufrd, btr, &temp, &overlapped); //прочитать байты из порта в буфер программы
                         counter += btr; //увеличиваем счётчик байтов
                         //ReadPrinting(); //вызываем функцию для вывода данных на экран и в файл
-                        clsCOMPort.GetMSG(AddCHAT, pDataArray->val1, bufrd);
+                        clsCOMPort.GetMSG(AddCHAT, phWNDData->hWND_CHAT, bufrd);
                     }
                 }
         }
     }
 }
 
+
 //выводим принятые байты на экран и в файл (если включено) 
 void ReadPrinting(HWND hDlg, BYTE *bufrd)
 {
-    /*CString strname = (CString)bufrd;
-
-    pList1->AddString(strname.GetString());*/
-
     size_t len = 0;
 
-    while ((TCHAR) * (bufrd + len) != '\0') {
+    while (*(bufrd + len) != '\0') {
         len++;
     }
 
-    TCHAR* pCOMPortStrList1 = (TCHAR*)malloc((len + 1) * sizeof(TCHAR));
-    memset(pCOMPortStrList1, '\0', (len + 1) * sizeof(TCHAR));
+    len++; //добавим счетчик под нулевой символ
 
+    TCHAR* pMessage = (TCHAR*)CoTaskMemAlloc((len) * sizeof(TCHAR));
+    SecureZeroMemory(pMessage, (len) * sizeof(TCHAR));
 
     for (unsigned int ii = 0; ii < len; ii++) { //len
-        pCOMPortStrList1[ii] = bufrd[ii];
+        pMessage[ii] = bufrd[ii];
     }
-
-    //pList1->AddString(pCOMPortStrList1);
+    
 
     HWND hwndList = GetDlgItem(hDlg, IDC_CHAT);
 
     int pos = (int)SendMessage(hwndList, LB_ADDSTRING, 0,
-        (LPARAM)pCOMPortStrList1);
+        (LPARAM)pMessage);
     // Set the array index of the player as item data.
     // This enables us to retrieve the item from the array
     // even after the items are sorted by the list box.
@@ -179,8 +176,9 @@ void ReadPrinting(HWND hDlg, BYTE *bufrd)
 
     memset(bufrd, 0, BUFSIZE); //очистить буфер (чтобы данные не накладывались друг на друга)
 
-    free(pCOMPortStrList1);
-    pCOMPortStrList1 = nullptr;
+    //free(pCOMPortStrList1);
+    CoTaskMemFree(pMessage);
+    pMessage = nullptr;
 }
 
 
@@ -279,13 +277,10 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
                 SetupComm(COMPort, 2000, 2000);
 
-                pmydata = (PMYDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
-                    sizeof(MYDATA));
-
-                pmydata->val1 = hwndDlg;
+                phWNDData->hWND_CHAT = hwndDlg;
 
                 MessageBox(hwndDlg, TEXT("ПОРТ УСПЕШНО ОТКРЫТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
-                reader = CreateThread(NULL, 0, ReadThread, pmydata, 0, NULL);
+                reader = CreateThread(NULL, 0, ReadThread, phWNDData, 0, NULL);
             }            
 
             return TRUE;
@@ -307,8 +302,17 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
     
+    //phWNDData = (PHWNDDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PHWNDDATA));
+
+    phWNDData = (PHWNDDATA)CoTaskMemAlloc(sizeof(PHWNDDATA));
+    SecureZeroMemory(phWNDData, sizeof(PHWNDDATA));
 
     DialogBox(hInstance, MAKEINTRESOURCE(IDD_MAIN_WND), NULL, MainDlgproc);
+
+    //HeapFree(GetProcessHeap(), 0, phWNDData);
+    CoTaskMemFree(phWNDData);
+
+    phWNDData = nullptr;
 
     return 0;
     /*WNDCLASSEX wcex;
