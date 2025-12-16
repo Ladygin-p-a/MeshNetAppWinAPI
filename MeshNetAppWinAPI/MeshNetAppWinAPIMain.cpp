@@ -226,14 +226,17 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
             //MessageBox(hwndDlg, (LPCWSTR)ListItem, TEXT("Item Selected"), MB_OK);
 
-            BOOL res = clsCOMPort.OpenCOMPort(ListItem, COMPort);
+            //BOOL res = clsCOMPort.OpenCOMPort(ListItem, COMPort);
+            BOOL res = clsCOMPort.StartCOMPort(ListItem);
             if (!res) {
 
                 MessageBox(hwndDlg, TEXT("НЕ УДАЛОСЬ ОТКРЫТЬ ВЫБРАННЫЙ COM ПОРТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
 
             } else {
 
+                BOOL res = clsCOMPort.StartReadCOMPort(hwndDlg);
 
+                /*
                 dcb.DCBlength = sizeof(DCB); //в первое поле структуры DCB необходимо занести её длину, она будет использоваться функциями настройки порта для контроля корректности структуры
                 //считать структуру DCB из порта
                 if (!GetCommState(COMPort, &dcb)) //если не удалось - закрыть порт и вывести сообщение об ошибке в строке  состояния
@@ -279,8 +282,10 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
                 phWNDData->hWND_CHAT = hwndDlg;
 
-                MessageBox(hwndDlg, TEXT("ПОРТ УСПЕШНО ОТКРЫТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
                 reader = CreateThread(NULL, 0, ReadThread, phWNDData, 0, NULL);
+                */
+
+                MessageBox(hwndDlg, TEXT("ПОРТ УСПЕШНО ОТКРЫТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
             }            
 
             return TRUE;
