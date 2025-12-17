@@ -29,9 +29,11 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 //int GetCOMPortStrList(HWND);
 int CALLBACK InitCOMPortList(HWND, BYTE*);//получает список компортов
 int CALLBACK AddCHAT(HWND, BYTE*);
+int CALLBACK GetMessageFromCOMPort(HWND, TCHAR*);
 DWORD WINAPI ReadThread(LPVOID, HWND);
 void ReadPrinting(HWND, BYTE*);
 void CloseCOMPort(void);
+
 
 #define BUFSIZE 255 //ёмкость буфера
 unsigned char bufrd[BUFSIZE], bufwr[BUFSIZE]; //приёмный и передающий буферы
@@ -80,7 +82,20 @@ typedef struct hWNDData {
 
 PHWNDDATA phWNDData;
 
+int CALLBACK GetMessageFromCOMPort(HWND hDlg, TCHAR* pMessage) {
 
+    HWND hwndList = GetDlgItem(hDlg, IDC_CHAT);
+
+    int pos = (int)SendMessage(hwndList, LB_ADDSTRING, 0,
+        (LPARAM)pMessage);
+    // Set the array index of the player as item data.
+    // This enables us to retrieve the item from the array
+    // even after the items are sorted by the list box.
+    SendMessage(hwndList, LB_SETITEMDATA, pos, (LPARAM)countStr);
+
+    return 0;
+
+}
 
 int CALLBACK AddCHAT(HWND hDlg, BYTE* _bufrd) {
 
