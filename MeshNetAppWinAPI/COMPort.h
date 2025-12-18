@@ -25,13 +25,14 @@ namespace _ComPort_ {
 		int GetMSG(int (*)(HWND, BYTE*), HWND, BYTE*);
 		int OpenCOMPort(LPTSTR, HANDLE&);
 		BOOL StartCOMPort(LPTSTR);
-		BOOL StartReadCOMPort(HWND);
+		BOOL StartReadCOMPort(int (*)(HWND, TCHAR*), HWND);
 		DWORD WINAPI ReadThread(LPVOID);
 		static DWORD WINAPI StaticReadThread(LPVOID);
 		DWORD MemberThreadProc();
 
 		typedef struct hWNDData {
 			HWND hWND_CHAT;
+			int (*ppp)(HWND, TCHAR*);
 		} HWNDDATA, * PHWNDDATA;
 
 		PHWNDDATA phWNDData;

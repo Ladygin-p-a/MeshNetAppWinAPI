@@ -61,6 +61,7 @@ typedef struct
     BYTE name[12];
 } Player;
 
+/*
 Player Roster[] =
 {
     {TEXT("Haas, Jonathan"), TEXT("Midfield"), 18, 4, "AAA"},
@@ -75,6 +76,7 @@ Player Roster[] =
     {TEXT("Camp, David"), TEXT("Midfield"), 22, 3, "OOO" },
     {TEXT("Kohl, Franz"), TEXT("Goalkeeper"), 17, 0, "MMM" },
 };
+*/
 
 typedef struct hWNDData {
     HWND hWND_CHAT;
@@ -197,8 +199,6 @@ void ReadPrinting(HWND hDlg, BYTE *bufrd)
 }
 
 
-
-
 INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
     switch (message)
@@ -207,10 +207,12 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
         
         clsCOMPort.InitCOMPortList(InitCOMPortList, hwndDlg);
 
+        /*
         for (int i = 0; i < ARRAYSIZE(Roster); i++)
         {
             clsCOMPort.GetMSG(AddCHAT, hwndDlg, Roster[i].name);
         }
+        */
 
         return TRUE;
 
@@ -249,7 +251,7 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
             } else {
 
-                BOOL res = clsCOMPort.StartReadCOMPort(hwndDlg);
+                BOOL res = clsCOMPort.StartReadCOMPort(GetMessageFromCOMPort, hwndDlg);
 
                 /*
                 dcb.DCBlength = sizeof(DCB); //в первое поле структуры DCB необходимо занести её длину, она будет использоваться функциями настройки порта для контроля корректности структуры

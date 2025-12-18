@@ -4,12 +4,13 @@
 
 using namespace _ComPort_;
 
-BOOL COMPortClass::StartReadCOMPort(HWND hwndDlg) {
+BOOL COMPortClass::StartReadCOMPort(int (*clb_GetMessageFromCOMPort)(HWND, TCHAR*), HWND hwndDlg) {
 
     phWNDData = (PHWNDDATA)CoTaskMemAlloc(sizeof(PHWNDDATA));
     SecureZeroMemory(phWNDData, sizeof(PHWNDDATA));
 
     phWNDData->hWND_CHAT = hwndDlg;
+    phWNDData->ppp = clb_GetMessageFromCOMPort;
 
     return StartReadCOMPortPrivate(hwndDlg);
 }
@@ -76,6 +77,8 @@ DWORD COMPortClass::MemberThreadProc() {
     COMSTAT comstat; //структура текущего состояния порта, в данной программе используется для определения количества принятых в порт байтов
     DWORD btr, temp, mask, signal; //переменная temp используется в качестве заглушки
 
+    int (*ppp1)(HWND, TCHAR*) = phWNDData->ppp;
+
     //PHWNDDATA phWNDData;
 
     //phWNDData = (PHWNDDATA)hwndDlg;
@@ -100,6 +103,19 @@ DWORD COMPortClass::MemberThreadProc() {
                         counter += btr; //увеличиваем счётчик байтов
                         //ReadPrinting(); //вызываем функцию для вывода данных на экран и в файл
                         //clsCOMPort.GetMSG(AddCHAT, phWNDData->hWND_CHAT, bufrd);
+
+
+                        LPCTSTR pref = TEXT("DDDD");
+
+                        TCHAR* pMessage = (TCHAR*)CoTaskMemAlloc((5) * sizeof(TCHAR));
+                        SecureZeroMemory(pMessage, (5) * sizeof(TCHAR));
+
+                        StringCbCopy(pMessage, 256, pref);
+
+                        ppp1(phWNDData->hWND_CHAT, pMessage);
+
+                        CoTaskMemFree(pMessage);
+
                     }
                 }
         }
