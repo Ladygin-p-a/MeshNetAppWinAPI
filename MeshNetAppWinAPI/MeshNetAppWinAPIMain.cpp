@@ -22,6 +22,8 @@ static TCHAR szTitle[] = _T("Windows Desktop Guided Tour Application");
 
 // Stored instance handle for use in Win32 API calls such as FindResource
 HINSTANCE hInst;
+HWND hWndCHATDlg; //Handle окна-списка сообщений в чате
+
 
 // Forward declarations of functions included in this code module:
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -29,7 +31,7 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 //int GetCOMPortStrList(HWND);
 int CALLBACK InitCOMPortList(HWND, BYTE*);//получает список компортов
 int CALLBACK AddCHAT(HWND, BYTE*);
-int CALLBACK GetMessageFromCOMPort(HWND, TCHAR*);
+int CALLBACK GetMessageFromSerial(INT, TCHAR*);
 DWORD WINAPI ReadThread(LPVOID, HWND);
 void ReadPrinting(HWND, BYTE*);
 void CloseCOMPort(void);
@@ -84,17 +86,27 @@ typedef struct hWNDData {
 
 PHWNDDATA phWNDData;
 
-int CALLBACK GetMessageFromCOMPort(HWND hDlg, TCHAR* pMessage) {
+int CALLBACK GetMessageFromSerial(INT MSG_ID, TCHAR* pMessage) {
 
-    HWND hwndList = GetDlgItem(hDlg, IDC_CHAT);
+    switch(MSG_ID)
+    {
+    case SERIAL_INCOMING_MSG:
+    {
 
-    int pos = (int)SendMessage(hwndList, LB_ADDSTRING, 0,
-        (LPARAM)pMessage);
-    // Set the array index of the player as item data.
-    // This enables us to retrieve the item from the array
-    // even after the items are sorted by the list box.
-    SendMessage(hwndList, LB_SETITEMDATA, pos, (LPARAM)countStr);
+        int pos = (int)SendMessage(hWndCHATDlg, LB_ADDSTRING, 0, (LPARAM)pMessage);
+        // Set the array index of the player as item data.
+        // This enables us to retrieve the item from the array
+        // even after the items are sorted by the list box.
+        SendMessage(hWndCHATDlg, LB_SETITEMDATA, pos, (LPARAM)countStr);
 
+        return 0;
+    }
+    case SERIAL_ERROR_OPEN_PORT:
+    {
+        return 0;
+    }
+    }
+    
     return 0;
 
 }
@@ -199,18 +211,20 @@ void ReadPrinting(HWND hDlg, BYTE *bufrd)
 }
 
 
-INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+INT_PTR MainDlgproc(HWND hWNDMainDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
     switch (message)
     {
     case WM_INITDIALOG:
         
-        clsCOMPort.InitCOMPortList(InitCOMPortList, hwndDlg);
+        hWndCHATDlg = GetDlgItem(hWNDMainDlg, IDC_CHAT);
+
+        clsCOMPort.InitCOMPortList(InitCOMPortList, hWNDMainDlg);
 
         /*
         for (int i = 0; i < ARRAYSIZE(Roster); i++)
         {
-            clsCOMPort.GetMSG(AddCHAT, hwndDlg, Roster[i].name);
+            clsCOMPort.GetMSG(AddCHAT, hWNDMainDlg, Roster[i].name);
         }
         */
 
@@ -247,11 +261,11 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
             BOOL res = clsCOMPort.StartCOMPort(ListItem);
             if (!res) {
 
-                MessageBox(hwndDlg, TEXT("НЕ УДАЛОСЬ ОТКРЫТЬ ВЫБРАННЫЙ COM ПОРТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
+                MessageBox(hWNDMainDlg, TEXT("НЕ УДАЛОСЬ ОТКРЫТЬ ВЫБРАННЫЙ COM ПОРТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
 
             } else {
 
-                BOOL res = clsCOMPort.StartReadCOMPort(GetMessageFromCOMPort, hwndDlg);
+                BOOL res = clsCOMPort.StartReadCOMPort(GetMessageFromSerial);
 
                 /*
                 dcb.DCBlength = sizeof(DCB); //в первое поле структуры DCB необходимо занести её длину, она будет использоваться функциями настройки порта для контроля корректности структуры
@@ -302,7 +316,7 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
                 reader = CreateThread(NULL, 0, ReadThread, phWNDData, 0, NULL);
                 */
 
-                MessageBox(hwndDlg, TEXT("ПОРТ УСПЕШНО ОТКРЫТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
+                MessageBox(hWNDMainDlg, TEXT("ПОРТ УСПЕШНО ОТКРЫТ."), TEXT("ИНФОРМАЦИЯ"), MB_OK);
             }            
 
             return TRUE;
@@ -314,7 +328,7 @@ INT_PTR MainDlgproc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam) {
             return TRUE;
 
         case IDCANCEL:
-            DestroyWindow(hwndDlg);
+            DestroyWindow(hWNDMainDlg);
             return TRUE;
         }
     }

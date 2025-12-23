@@ -3,11 +3,15 @@
 
 namespace _ComPort_ {
 
+	#define SERIAL_ERROR_OPEN_PORT 0
+	#define SERIAL_INCOMING_MSG 1
+
 	class COMPortClass
 	{
 	public:
 
-#define BUFSIZE 255 //ёмкость буфера
+		#define BUFSIZE 255 //ёмкость буфера
+
 		unsigned char bufrd[BUFSIZE], bufwr[BUFSIZE]; //приёмный и передающий буферы
 
 		HANDLE COMPort;
@@ -25,21 +29,25 @@ namespace _ComPort_ {
 		int GetMSG(int (*)(HWND, BYTE*), HWND, BYTE*);
 		int OpenCOMPort(LPTSTR, HANDLE&);
 		BOOL StartCOMPort(LPTSTR);
-		BOOL StartReadCOMPort(int (*)(HWND, TCHAR*), HWND);
+		BOOL StartReadCOMPort(int (*)(INT, TCHAR*));
 		DWORD WINAPI ReadThread(LPVOID);
 		static DWORD WINAPI StaticReadThread(LPVOID);
 		DWORD MemberThreadProc();
 
-		typedef struct hWNDData {
-			HWND hWND_CHAT;
-			int (*ppp)(HWND, TCHAR*);
-		} HWNDDATA, * PHWNDDATA;
+		/*
+		typedef struct MainDLGData {
+			int (*SendMessageMainDlg)(INT, TCHAR*);
+		} MAINDLGDATA, *PMAINDLGDATA;
 
-		PHWNDDATA phWNDData;
+		PMAINDLGDATA pMainDLGData = nullptr;
+		*/
+
+		int (*SendMessageMainDlg)(INT, TCHAR*);
 
 	private:
 		BOOL OpenCOMPortPrivate(LPTSTR);
-		BOOL StartReadCOMPortPrivate(HWND);
+		BOOL StartReadCOMPortPrivate();
+		void ConvByteToTStr(BYTE*);
 
 	};
 };
