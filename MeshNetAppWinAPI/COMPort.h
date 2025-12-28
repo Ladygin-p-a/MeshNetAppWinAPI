@@ -5,6 +5,8 @@ namespace _ComPort_ {
 
 	#define SERIAL_ERROR_OPEN_PORT 0
 	#define SERIAL_INCOMING_MSG 1
+	#define SERIAL_OK_OPEN_PORT 2
+
 
 	class COMPortClass
 	{
@@ -28,19 +30,12 @@ namespace _ComPort_ {
 		int InitCOMPortList(int (*)(HWND, BYTE*), HWND);
 		int GetMSG(int (*)(HWND, BYTE*), HWND, BYTE*);
 		int OpenCOMPort(LPTSTR, HANDLE&);
-		BOOL StartCOMPort(LPTSTR);
-		BOOL StartReadCOMPort(int (*)(INT, TCHAR*));
+		BOOL BeginSerial(LPTSTR, int (*)(INT, TCHAR*));
+		BOOL StartReadCOMPort();
 		DWORD WINAPI ReadThread(LPVOID);
 		static DWORD WINAPI StaticReadThread(LPVOID);
 		DWORD MemberThreadProc();
 
-		/*
-		typedef struct MainDLGData {
-			int (*SendMessageMainDlg)(INT, TCHAR*);
-		} MAINDLGDATA, *PMAINDLGDATA;
-
-		PMAINDLGDATA pMainDLGData = nullptr;
-		*/
 
 		int (*SendMessageMainDlg)(INT, TCHAR*);
 

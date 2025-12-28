@@ -30,12 +30,7 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
 //int GetCOMPortStrList(HWND);
 int CALLBACK InitCOMPortList(HWND, BYTE*);//получает список компортов
-int CALLBACK AddCHAT(HWND, BYTE*);
 int CALLBACK GetMessageFromSerial(INT, TCHAR*);
-DWORD WINAPI ReadThread(LPVOID, HWND);
-void ReadPrinting(HWND, BYTE*);
-void CloseCOMPort(void);
-
 
 #define BUFSIZE 255 //Ємкость буфера
 unsigned char bufrd[BUFSIZE], bufwr[BUFSIZE]; //приЄмный и передающий буферы
@@ -43,6 +38,7 @@ unsigned char bufrd[BUFSIZE], bufwr[BUFSIZE]; //приЄмный и передающий буферы
 HANDLE COMPort;
 DCB dcb;
 COMMTIMEOUTS timeouts;
+HWND _hWNDMainDlg;
 
 OVERLAPPED overlapped;
 int handle; //дескриптор дл€ работы с файлом с помощью библиотеки <io.h>
@@ -53,38 +49,6 @@ int countStr = 0;
 HANDLE reader; //дескриптор потока чтени€ из порта
 
 _ComPort_::COMPortClass clsCOMPort;
-
-typedef struct
-{
-    TCHAR achName[MAX_PATH];
-    TCHAR achPosition[12];
-    int nGamesPlayed;
-    int nGoalsScored;
-    BYTE name[12];
-} Player;
-
-/*
-Player Roster[] =
-{
-    {TEXT("Haas, Jonathan"), TEXT("Midfield"), 18, 4, "AAA"},
-    {TEXT("Pai, Jyothi"), TEXT("Forward"), 36, 12, "BBB" },
-    {TEXT("Hanif, Kerim"), TEXT("Back"), 26, 0, "CCC" },
-    {TEXT("Anderberg, Michael"), TEXT("Back"), 24, 2, "DDD" },
-    {TEXT("Jelitto, Jacek"), TEXT("Midfield"), 26, 3, "EEE" },
-    {TEXT("Raposo, Rui"), TEXT("Back"), 24, 3, "FFF"},
-    {TEXT("Joseph, Brad"), TEXT("Forward"), 13, 3, "GGG" },
-    {TEXT("Bouchard, Thomas"), TEXT("Forward"), 28, 5, "KKK" },
-    {TEXT("Salmre, Ivo "), TEXT("Midfield"), 27, 7, "LLL" },
-    {TEXT("Camp, David"), TEXT("Midfield"), 22, 3, "OOO" },
-    {TEXT("Kohl, Franz"), TEXT("Goalkeeper"), 17, 0, "MMM" },
-};
-*/
-
-typedef struct hWNDData {
-    HWND hWND_CHAT;
-} HWNDDATA, *PHWNDDATA;
-
-PHWNDDATA phWNDData;
 
 int CALLBACK GetMessageFromSerial(INT MSG_ID, TCHAR* pMessage) {
 
@@ -103,6 +67,12 @@ int CALLBACK GetMessageFromSerial(INT MSG_ID, TCHAR* pMessage) {
     }
     case SERIAL_ERROR_OPEN_PORT:
     {
+        MessageBox(_hWNDMainDlg, pMessage, TEXT("»Ќ‘ќ–ћј÷»я"), MB_OK);
+        return 0;
+    }
+    case SERIAL_OK_OPEN_PORT:
+    {
+        //MessageBox(_hWNDMainDlg, pMessage, TEXT("»Ќ‘ќ–ћј÷»я"), MB_OK);
         return 0;
     }
     }
@@ -111,15 +81,6 @@ int CALLBACK GetMessageFromSerial(INT MSG_ID, TCHAR* pMessage) {
 
 }
 
-int CALLBACK AddCHAT(HWND hDlg, BYTE* _bufrd) {
-
-    ReadPrinting(hDlg, _bufrd);
-
-    countStr++;
-
-    return 0;
-
-}
 
 int CALLBACK InitCOMPortList(HWND hDlg, BYTE* COMPortName) {
 
@@ -138,78 +99,6 @@ int CALLBACK InitCOMPortList(HWND hDlg, BYTE* COMPortName) {
 
 }
 
-//главна€ функци€ потока, реализует приЄм байтов из COM-порта
-DWORD WINAPI ReadThread(LPVOID hwndDlg)
-{
-    COMSTAT comstat; //структура текущего состо€ни€ порта, в данной программе используетс€ дл€ определени€ количества прин€тых в порт байтов
-    DWORD btr, temp, mask, signal; //переменна€ temp используетс€ в качестве заглушки
-
-    PHWNDDATA phWNDData;
-
-    phWNDData = (PHWNDDATA)hwndDlg;
-
-    overlapped.hEvent = CreateEvent(NULL, true, true, NULL); //создать сигнальный объект-событие дл€ асинхронных операций
-
-    SetCommMask(COMPort, EV_RXCHAR); //установить маску на срабатывание по событию приЄма байта в порт
-    while (1) //пока поток не будет прерван, выполн€ем цикл
-    {
-        WaitCommEvent(COMPort, &mask, &overlapped); //ожидать событи€ приЄма байта (это и есть	перекрываема€ операци€)
-        signal = WaitForSingleObject(overlapped.hEvent, INFINITE); //приостановить поток до прихода байта
-        if (signal == WAIT_OBJECT_0) //если событие прихода байта произошло
-        {
-            if (GetOverlappedResult(COMPort, &overlapped, &temp, true)) //провер€ем, успешно ли завершилась перекрываема€ операци€ WaitCommEvent
-                if ((mask & EV_RXCHAR) != 0) //если произошло именно событие прихода байта
-                {
-                    ClearCommError(COMPort, &temp, &comstat); //нужно заполнить структуру COMSTAT
-                    btr = comstat.cbInQue; //и получить из неЄ количество прин€тых байтов
-                    if (btr) //если действительно есть байты дл€ чтени€
-                    {
-                        ReadFile(COMPort, bufrd, btr, &temp, &overlapped); //прочитать байты из порта в буфер программы
-                        counter += btr; //увеличиваем счЄтчик байтов
-                        //ReadPrinting(); //вызываем функцию дл€ вывода данных на экран и в файл
-                        clsCOMPort.GetMSG(AddCHAT, phWNDData->hWND_CHAT, bufrd);
-                    }
-                }
-        }
-    }
-}
-
-
-//выводим прин€тые байты на экран и в файл (если включено) 
-void ReadPrinting(HWND hDlg, BYTE *bufrd)
-{
-    size_t len = 0;
-
-    while (*(bufrd + len) != '\0') {
-        len++;
-    }
-
-    len++; //добавим счетчик под нулевой символ
-
-    TCHAR* pMessage = (TCHAR*)CoTaskMemAlloc((len) * sizeof(TCHAR));
-    SecureZeroMemory(pMessage, (len) * sizeof(TCHAR));
-
-    for (unsigned int ii = 0; ii < len; ii++) { //len
-        pMessage[ii] = bufrd[ii];
-    }
-    
-
-    HWND hwndList = GetDlgItem(hDlg, IDC_CHAT);
-
-    int pos = (int)SendMessage(hwndList, LB_ADDSTRING, 0,
-        (LPARAM)pMessage);
-    // Set the array index of the player as item data.
-    // This enables us to retrieve the item from the array
-    // even after the items are sorted by the list box.
-    SendMessage(hwndList, LB_SETITEMDATA, pos, (LPARAM)countStr);
-
-    memset(bufrd, 0, BUFSIZE); //очистить буфер (чтобы данные не накладывались друг на друга)
-
-    //free(pCOMPortStrList1);
-    CoTaskMemFree(pMessage);
-    pMessage = nullptr;
-}
-
 
 INT_PTR MainDlgproc(HWND hWNDMainDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
@@ -217,16 +106,11 @@ INT_PTR MainDlgproc(HWND hWNDMainDlg, UINT message, WPARAM wParam, LPARAM lParam
     {
     case WM_INITDIALOG:
         
+        _hWNDMainDlg = hWNDMainDlg;
+
         hWndCHATDlg = GetDlgItem(hWNDMainDlg, IDC_CHAT);
 
         clsCOMPort.InitCOMPortList(InitCOMPortList, hWNDMainDlg);
-
-        /*
-        for (int i = 0; i < ARRAYSIZE(Roster); i++)
-        {
-            clsCOMPort.GetMSG(AddCHAT, hWNDMainDlg, Roster[i].name);
-        }
-        */
 
         return TRUE;
 
@@ -249,75 +133,12 @@ INT_PTR MainDlgproc(HWND hWNDMainDlg, UINT message, WPARAM wParam, LPARAM lParam
             //   Send CB_GETLBTEXT message to get the item.
             //   Display the item in a messagebox.
         {
-            int ItemIndex = SendMessage((HWND)lParam, (UINT)CB_GETCURSEL,(WPARAM)0, (LPARAM)0);
-            TCHAR  ListItem[10];
+            int ItemIndex = SendMessage((HWND)lParam, (UINT)CB_GETCURSEL, (WPARAM)0, (LPARAM)0);
+            TCHAR  COMPortName[10]{0};
 
-            (TCHAR)SendMessage((HWND)lParam, (UINT)CB_GETLBTEXT,(WPARAM)ItemIndex, (LPARAM)ListItem);
+            (TCHAR)SendMessage((HWND)lParam, (UINT)CB_GETLBTEXT,(WPARAM)ItemIndex, (LPARAM)COMPortName);
 
-
-            //MessageBox(hwndDlg, (LPCWSTR)ListItem, TEXT("Item Selected"), MB_OK);
-
-            //BOOL res = clsCOMPort.OpenCOMPort(ListItem, COMPort);
-            BOOL res = clsCOMPort.StartCOMPort(ListItem);
-            if (!res) {
-
-                MessageBox(hWNDMainDlg, TEXT("Ќ≈ ”ƒјЋќ—№ ќ“ –џ“№ ¬џЅ–јЌЌџ… COM ѕќ–“."), TEXT("»Ќ‘ќ–ћј÷»я"), MB_OK);
-
-            } else {
-
-                BOOL res = clsCOMPort.StartReadCOMPort(GetMessageFromSerial);
-
-                /*
-                dcb.DCBlength = sizeof(DCB); //в первое поле структуры DCB необходимо занести еЄ длину, она будет использоватьс€ функци€ми настройки порта дл€ контрол€ корректности структуры
-                //считать структуру DCB из порта
-                if (!GetCommState(COMPort, &dcb)) //если не удалось - закрыть порт и вывести сообщение об ошибке в строке  состо€ни€
-                {
-                }
-
-
-                //инициализаци€ структуры DCB 
-                dcb.BaudRate = CBR_115200; //задаЄм скорость передачи 115200 бод
-
-                dcb.fBinary = TRUE; //включаем двоичный режим обмена		
-                dcb.fOutxCtsFlow = FALSE; //выключаем режим слежени€ за сигналом CTS
-                dcb.fOutxDsrFlow = FALSE; //выключаем режим слежени€ за сигналом DSR
-                dcb.fDtrControl = DTR_CONTROL_DISABLE; //отключаем использование линии DTR
-                dcb.fDsrSensitivity = FALSE; //отключаем восприимчивость драйвера к состо€нию линии DSR
-                dcb.fNull = FALSE; //разрешить приЄм нулевых байтов
-                dcb.fRtsControl = RTS_CONTROL_DISABLE; //отключаем использование линии RTS
-                dcb.fAbortOnError = FALSE; //отключаем остановку всех операций чтени€/записи при ошибке
-                dcb.ByteSize = 8; //задаЄм 8 бит в байте
-                dcb.Parity = 0; //отключаем проверку чЄтности
-                dcb.StopBits = 0; //задаЄм один стоп-бит
-
-                //загрузить структуру DCB в порт
-                if (!SetCommState(COMPort, &dcb)) //если не удалось - закрыть порт и вывести сообщение об ошибке в строке состо€ни€
-                {
-                }
-
-
-
-                //установить таймауты
-                timeouts.ReadIntervalTimeout = 0; //таймаут между двум€ символами
-                timeouts.ReadTotalTimeoutMultiplier = 0; //общий таймаут операции чтени€
-                timeouts.ReadTotalTimeoutConstant = 0; //константа дл€ общего таймаута операции чтени€
-                timeouts.WriteTotalTimeoutMultiplier = 0; //общий таймаут операции записи
-                timeouts.WriteTotalTimeoutConstant = 0; //константа дл€ общего таймаута операции записи » записываем структуру таймаутов в порт :
-                //записать структуру таймаутов в порт
-                if (!SetCommTimeouts(COMPort, &timeouts)) //если не удалось - закрыть порт и вывести сообщение обошибке в строке состо€ни€
-                {
-
-                }
-
-                SetupComm(COMPort, 2000, 2000);
-
-                phWNDData->hWND_CHAT = hwndDlg;
-
-                reader = CreateThread(NULL, 0, ReadThread, phWNDData, 0, NULL);
-                */
-
-                MessageBox(hWNDMainDlg, TEXT("ѕќ–“ ”—ѕ≈ЎЌќ ќ“ –џ“."), TEXT("»Ќ‘ќ–ћј÷»я"), MB_OK);
-            }            
+            BOOL res = clsCOMPort.BeginSerial(COMPortName, GetMessageFromSerial);
 
             return TRUE;
         }
@@ -337,18 +158,8 @@ INT_PTR MainDlgproc(HWND hWNDMainDlg, UINT message, WPARAM wParam, LPARAM lParam
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
-    
-    //phWNDData = (PHWNDDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PHWNDDATA));
-
-    phWNDData = (PHWNDDATA)CoTaskMemAlloc(sizeof(PHWNDDATA));
-    SecureZeroMemory(phWNDData, sizeof(PHWNDDATA));
 
     DialogBox(hInstance, MAKEINTRESOURCE(IDD_MAIN_WND), NULL, MainDlgproc);
-
-    //HeapFree(GetProcessHeap(), 0, phWNDData);
-    CoTaskMemFree(phWNDData);
-
-    phWNDData = nullptr;
 
     return 0;
     /*WNDCLASSEX wcex;
