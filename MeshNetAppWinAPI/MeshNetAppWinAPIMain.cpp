@@ -10,9 +10,6 @@
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
-// Global variables
-constexpr UINT MAX_SIZE_COMPortName = 12;
-constexpr UINT MAX_SIZE_RegValueName = 255;
 
 // The main window class name.
 static TCHAR szWindowClass[] = _T("DesktopApp");
@@ -23,30 +20,15 @@ static TCHAR szTitle[] = _T("Windows Desktop Guided Tour Application");
 // Stored instance handle for use in Win32 API calls such as FindResource
 HINSTANCE hInst;
 HWND hWndCHATDlg; //Handle окна-списка сообщений в чате
-
+HWND _hWNDMainDlg; //Handle главного окна
 
 // Forward declarations of functions included in this code module:
-LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+//LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+INT CALLBACK InitCOMPortList(HWND, BYTE*);//получает список компортов
+INT CALLBACK GetMessageFromSerial(INT, TCHAR*); //главная функция приема сообщений от порта
 
-//int GetCOMPortStrList(HWND);
-int CALLBACK InitCOMPortList(HWND, BYTE*);//получает список компортов
-int CALLBACK GetMessageFromSerial(INT, TCHAR*);
-
-#define BUFSIZE 255 //ёмкость буфера
-unsigned char bufrd[BUFSIZE], bufwr[BUFSIZE]; //приёмный и передающий буферы
-
-HANDLE COMPort;
-DCB dcb;
-COMMTIMEOUTS timeouts;
-HWND _hWNDMainDlg;
-
-OVERLAPPED overlapped;
-int handle; //дескриптор для работы с файлом с помощью библиотеки <io.h>
-bool fl = 0; //флаг, указывающий на успешность операций записи (1 - успешно, 0 - не успешно
-unsigned long counter; //счётчик принятых байтов, обнуляется при каждом открытии порт
 int countStr = 0;
 
-HANDLE reader; //дескриптор потока чтения из порта
 
 _ComPort_::COMPortClass clsCOMPort;
 

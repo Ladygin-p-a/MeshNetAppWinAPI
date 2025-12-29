@@ -104,22 +104,21 @@ DWORD COMPortClass::MemberThreadProc() {
 void COMPortClass::ConvByteToTStr(BYTE* bufrd)
 {
     size_t len = 0;
+    len = strlen((const char*)bufrd);
 
-    while (*(bufrd + len) != '\0') {
-        len++;
-    }
-
+   
     len++; //добавим счетчик под нулевой символ
 
     TCHAR *pMessage = (TCHAR*)CoTaskMemAlloc((len) * sizeof(TCHAR));
 
     SecureZeroMemory(pMessage, (len) * sizeof(TCHAR));
 
+    
     for (unsigned int ii = 0; ii < len; ii++) { //len
         pMessage[ii] = bufrd[ii];
     }
 
-
+       
     SendMessageMainDlg(SERIAL_INCOMING_MSG, pMessage);
     
 

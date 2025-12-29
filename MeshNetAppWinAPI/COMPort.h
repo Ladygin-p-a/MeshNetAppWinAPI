@@ -27,9 +27,7 @@ namespace _ComPort_ {
 		int countStr = 0;
 
 		HANDLE reader; //дескриптор потока чтения из порта
-		int InitCOMPortList(int (*)(HWND, BYTE*), HWND);
-		int GetMSG(int (*)(HWND, BYTE*), HWND, BYTE*);
-		int OpenCOMPort(LPTSTR, HANDLE&);
+		INT InitCOMPortList(int (*)(HWND, BYTE*), HWND);
 		BOOL BeginSerial(LPTSTR, int (*)(INT, TCHAR*));
 		BOOL StartReadCOMPort();
 		DWORD WINAPI ReadThread(LPVOID);
@@ -37,7 +35,7 @@ namespace _ComPort_ {
 		DWORD MemberThreadProc();
 
 
-		int (*SendMessageMainDlg)(INT, TCHAR*);
+		INT(*SendMessageMainDlg)(INT, TCHAR*);
 
 	private:
 		BOOL OpenCOMPortPrivate(LPTSTR);
