@@ -5,6 +5,8 @@
 #include <strsafe.h>
 #include "COMPort.h"
 #include <mbstring.h>
+#include <windowsx.h>
+
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
@@ -17,14 +19,19 @@ static TCHAR szWindowClass[] = _T("DesktopApp");
 // The string that appears in the application's title bar.
 static TCHAR szTitle[] = _T("Windows Desktop Guided Tour Application");
 
+
+TCHAR  COMPortName[COMPortNameLen] { 0 };
+
 // Stored instance handle for use in Win32 API calls such as FindResource
 HINSTANCE hInst;
 HWND hWndCHATDlg; //Handle окна-списка сообщений в чате
+HWND hWndCONNECTBtn; //Handle кнопки Соединиться
 HWND _hWNDMainDlg; //Handle главного окна
+HWND hWndCOMPortList; //Handle списка ком портов
 
 // Forward declarations of functions included in this code module:
 //LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
-INT CALLBACK InitCOMPortList(HWND, BYTE*);//получает список компортов
+INT CALLBACK InitCOMPortList(BYTE*);//получает список компортов
 INT CALLBACK GetMessageFromSerial(INT, TCHAR*); //главная функция приема сообщений от порта
 
 int countStr = 0;
@@ -49,12 +56,38 @@ int CALLBACK GetMessageFromSerial(INT MSG_ID, TCHAR* pMessage) {
     }
     case SERIAL_ERROR_OPEN_PORT:
     {
-        MessageBox(_hWNDMainDlg, pMessage, TEXT("ИНФОРМАЦИЯ"), MB_OK);
+        MessageBox(_hWNDMainDlg, pMessage, TEXT("ОШИБКА ОТКРЫТИЯ ПОРТА"), MB_OK);
         return 0;
     }
     case SERIAL_OK_OPEN_PORT:
     {
         //MessageBox(_hWNDMainDlg, pMessage, TEXT("ИНФОРМАЦИЯ"), MB_OK);
+        return 0;
+    }
+    case SERIAL_CHECK_EMPTY_PORT_NAME:
+    {
+        TCHAR lpch[COMPortNameLen]{ 0 };
+        int cch = ComboBox_GetText(hWndCOMPortList, lpch, COMPortNameLen);
+
+        if (!cch) {
+
+            MessageBox(_hWNDMainDlg, pMessage, TEXT("ОШИБКА ВЫБОРА ПОРТА"), MB_OK);
+        }
+
+        return cch;
+    }
+    case COMPORTLIST_ENABLED:
+    {
+        ComboBox_Enable(hWndCOMPortList, TRUE);
+        Button_SetText(hWndCONNECTBtn, clsCOMPort.CONNECT_MSG);
+
+        return 0;
+    }
+    case COMPORTLIST_DISABLED:
+    {
+        ComboBox_Enable(hWndCOMPortList, FALSE);
+        Button_SetText(hWndCONNECTBtn, clsCOMPort.DISCONNECT_MSG);
+
         return 0;
     }
     }
@@ -64,18 +97,15 @@ int CALLBACK GetMessageFromSerial(INT MSG_ID, TCHAR* pMessage) {
 }
 
 
-int CALLBACK InitCOMPortList(HWND hDlg, BYTE* COMPortName) {
+int CALLBACK InitCOMPortList(BYTE* COMPortName) {
 
     DWORD dwIndex;
 
-    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
-
-    dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)COMPortName);
+    dwIndex = SendMessage(hWndCOMPortList, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)COMPortName);
     //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
-
-    // Send the CB_SETCURSEL message to display an initial item 
-    //  in the selection field  
-    SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
+    
+    ////устанавливаем добавленный порт как выбранный вариант  
+    //SendMessage(hWndCOMPortList, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
     
     return 0;
 
@@ -90,9 +120,11 @@ INT_PTR MainDlgproc(HWND hWNDMainDlg, UINT message, WPARAM wParam, LPARAM lParam
         
         _hWNDMainDlg = hWNDMainDlg;
 
-        hWndCHATDlg = GetDlgItem(hWNDMainDlg, IDC_CHAT);
+        hWndCHATDlg     = GetDlgItem(hWNDMainDlg, IDC_CHAT);
+        hWndCONNECTBtn  = GetDlgItem(hWNDMainDlg, IDC_CONNECT);
+        hWndCOMPortList = GetDlgItem(hWNDMainDlg, IDC_COMPortLIST);
 
-        clsCOMPort.InitCOMPortList(InitCOMPortList, hWNDMainDlg);
+        clsCOMPort.InitCOMPortList(InitCOMPortList);
 
         return TRUE;
 
@@ -108,6 +140,21 @@ INT_PTR MainDlgproc(HWND hWNDMainDlg, UINT message, WPARAM wParam, LPARAM lParam
 
         DrawText(hdc, TEXT("My Text"), -1, &r, DT_LEFT);
         */
+        if ((!clsCOMPort.PortIsOpen) && (LOWORD(wParam) == IDC_CONNECT) && ((HIWORD(wParam) == BN_CLICKED))) //Обработаем нажатие кнопки Соединиться
+        {
+            
+            BOOL res = clsCOMPort.BeginSerial(COMPortName, GetMessageFromSerial);
+
+            return TRUE;
+        }
+
+        if ((clsCOMPort.PortIsOpen) && (LOWORD(wParam) == IDC_CONNECT) && ((HIWORD(wParam) == BN_CLICKED))) //Обработаем нажатие кнопки Прервать
+        {
+
+            clsCOMPort.StopSerial();
+
+            return TRUE;
+        }
 
         if (HIWORD(wParam) == CBN_SELCHANGE)
             // If the user makes a selection from the list:
@@ -116,11 +163,9 @@ INT_PTR MainDlgproc(HWND hWNDMainDlg, UINT message, WPARAM wParam, LPARAM lParam
             //   Display the item in a messagebox.
         {
             int ItemIndex = SendMessage((HWND)lParam, (UINT)CB_GETCURSEL, (WPARAM)0, (LPARAM)0);
-            TCHAR  COMPortName[10]{0};
+           
 
             (TCHAR)SendMessage((HWND)lParam, (UINT)CB_GETLBTEXT,(WPARAM)ItemIndex, (LPARAM)COMPortName);
-
-            BOOL res = clsCOMPort.BeginSerial(COMPortName, GetMessageFromSerial);
 
             return TRUE;
         }
@@ -256,101 +301,3 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     return 0;
 }*/
 
-/*int GetCOMPortStrList(HWND hDlg) {
-
-    DWORD dwIndex;
-
-    HWND hWndComboBox = GetDlgItem(hDlg, IDC_CPLIST);
-
-    //pCOMPortNameList->ResetContent();
-
-    int r = 0;
-    HKEY hkey = NULL;
-    //Открываем раздел реестра, в котором хранится иинформация о COM портах
-    r = RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("HARDWARE\\DEVICEMAP\\SERIALCOMM\\"), 0, KEY_READ, &hkey);
-    if (r != ERROR_SUCCESS)
-        return 0;
-
-    unsigned long CountValues = 0, MaxValueNameLen = 0, MaxValueLen = 0;
-    //Получаем информацию об открытом разделе реестра
-    RegQueryInfoKey(hkey, NULL, NULL, NULL, NULL, NULL, NULL, &CountValues, &MaxValueNameLen, &MaxValueLen, NULL, NULL);
-    ++MaxValueNameLen;
-    //Выделяем память
-    TCHAR* bufferName = NULL, * bufferData = NULL;
-    bufferName = (TCHAR*)malloc(MaxValueNameLen * sizeof(TCHAR));
-    if (!bufferName)
-    {
-        RegCloseKey(hkey);
-        return 0;
-    }
-    bufferData = (TCHAR*)malloc((MaxValueLen + 1) * sizeof(TCHAR));
-    if (!bufferData)
-    {
-        free(bufferName);
-        RegCloseKey(hkey);
-        return 0;
-    }
-
-
-    TCHAR* pCOMPortStrList = (TCHAR*)malloc((CountValues * MaxValueLen + 1) * sizeof(TCHAR));
-    memset(pCOMPortStrList, '\0', (CountValues * MaxValueLen + 1) * sizeof(TCHAR));
-
-    //TCHAR pCOMPortStrList[128];
-    //SecureZeroMemory(pCOMPortStrList, sizeof(pCOMPortStrList));
-
-    unsigned long NameLen, type, DataLen, count = 0;
-    //Цикл перебора параметров раздела реестра
-    for (unsigned int i = 0; i < CountValues; i++)
-    {
-        NameLen = MaxValueNameLen;
-        DataLen = MaxValueLen;
-        r = RegEnumValue(hkey, i, bufferName, &NameLen, NULL, &type, (LPBYTE)bufferData, &DataLen);
-        if ((r != ERROR_SUCCESS) || (type != REG_SZ))
-            continue;
-
-        //_tprintf(TEXT("%s\n"), bufferData);
-
-        //for (unsigned int ii = 0; ii < _tcslen(bufferData); ii++) {
-
-        size_t len = 0;
-
-        while ((TCHAR) * (bufferData + len) != '\0') {
-            len++;
-        }
-
-        for (unsigned int ii = 0; ii < len; ii++) {
-            TCHAR aaa = (TCHAR) * (bufferData + ii);
-            if (aaa != '\0') {
-                pCOMPortStrList[count] = aaa;
-                count++;
-            }
-
-        }
-
-        pCOMPortStrList[count] = ';';
-        count++;
-
-        //pCOMPortNameList->AddString(bufferData);
-
-        dwIndex = SendMessage(hWndComboBox, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)bufferData);
-        //или так (через макрос) :ComboBox_AddString(hWndComboBox, A);
-
-        // Send the CB_SETCURSEL message to display an initial item 
-        //  in the selection field  
-        SendMessage(hWndComboBox, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
-
-    }
-    pCOMPortStrList[count] = '\0';
-
-    //Освобождаем память
-    free(bufferName);
-    bufferName = 0;
-    free(bufferData);
-    bufferData = 0;
-    //Закрываем раздел реестра
-    RegCloseKey(hkey);
-
-    //return pCOMPortStrList;
-    return 0;
-
-}*/

@@ -63,10 +63,73 @@ DWORD WINAPI COMPortClass::StaticReadThread(LPVOID lpParam) {
     // 2. Приводим указатель обратно к типу класса
     COMPortClass* pThis = reinterpret_cast<COMPortClass*>(lpParam);
     // 3. Вызываем обычный метод класса
-    return pThis->MemberThreadProc();
+    return pThis->ReadThread();
 }
 
-DWORD COMPortClass::MemberThreadProc() {
+DWORD COMPortClass::ReadThread() {
+
+    COMSTAT comstat; //структура текущего состояния порта, в данной программе используется для определения количества принятых в порт байтов
+    DWORD btr, temp, mask, dwEvent; //переменная temp используется в качестве заглушки
+
+    overlapped.hEvent = CreateEvent(NULL, true, true, NULL); //создать сигнальный объект-событие для асинхронных операций
+
+    EventTerminateCOMPortThread = CreateEvent(NULL, FALSE, FALSE, TEXT("EventTerminateCOMPortThread")); //создадим второе событие для отлова прервывания потока приема данных из порта
+
+    HANDLE EventsArray[EventCount] = {overlapped.hEvent , EventTerminateCOMPortThread};
+
+    SetCommMask(COMPort, EV_RXCHAR); //установить маску на срабатывание по событию приёма байта в порт
+    while (1) //пока поток не будет прерван, выполняем цикл
+    {
+        WaitCommEvent(COMPort, &mask, &overlapped); //ожидать события приёма байта (это и есть	перекрываемая операция)
+        
+        dwEvent = WaitForMultipleObjects(EventCount, EventsArray, FALSE, INFINITE); //приостановить поток до прихода байта или прерывания потока по прекращению работы с портом
+        switch (dwEvent)
+        {
+        case WAIT_OBJECT_0 + 0: //сработало событие приема данных из порта
+        {
+            if (GetOverlappedResult(COMPort, &overlapped, &temp, true)) //проверяем, успешно ли завершилась перекрываемая операция WaitCommEvent
+            {
+                if ((mask & EV_RXCHAR) != 0) //если произошло именно событие прихода байта
+                {
+                    ClearCommError(COMPort, &temp, &comstat); //нужно заполнить структуру COMSTAT
+                    btr = comstat.cbInQue; //и получить из неё количество принятых байтов
+                    if (btr) //если действительно есть байты для чтения
+                    {
+                        ReadFile(COMPort, bufrd, btr, &temp, &overlapped); //прочитать байты из порта в буфер программы
+                        counter += btr; //увеличиваем счётчик байтов
+
+                        ConvByteToTStr(bufrd);
+
+                    }
+                }
+            }
+            break;
+        }
+        case WAIT_OBJECT_0 + 1: //сработало событие прерывания потока приема данных из порта
+        {
+            PortIsOpen = FALSE;
+
+            CloseHandle(overlapped.hEvent);
+            CloseHandle(EventTerminateCOMPortThread);
+            CloseHandle(COMPort);
+            CloseHandle(reader);
+
+            COMPort = nullptr;
+            reader  = nullptr;
+            EventTerminateCOMPortThread = nullptr;
+
+            ExitThread(0);
+            break;
+        }
+
+        }
+    }
+
+    return 0;
+}
+
+/* Оставлю типа шаблон для обработки одиночного события прихода данных в порт
+DWORD COMPortClass::ReadThread() {
    
     COMSTAT comstat; //структура текущего состояния порта, в данной программе используется для определения количества принятых в порт байтов
     DWORD btr, temp, mask, signal; //переменная temp используется в качестве заглушки
@@ -98,7 +161,7 @@ DWORD COMPortClass::MemberThreadProc() {
     }
 
     return 0;
-}
+}*/
 
 //выводим принятые байты на экран и в файл (если включено) 
 void COMPortClass::ConvByteToTStr(BYTE* bufrd)
@@ -135,7 +198,22 @@ BOOL COMPortClass::BeginSerial(LPTSTR nameCOMPort, int (*CallBackFuncMainDlg)(IN
     return OpenCOMPortPrivate(nameCOMPort);
 }
 
+BOOL COMPortClass::StopSerial() {
+
+    SetEvent(EventTerminateCOMPortThread);
+    SendMessageMainDlg(COMPORTLIST_ENABLED, EMPTY_MSG);
+
+    return TRUE;
+}
+
 BOOL COMPortClass::OpenCOMPortPrivate(LPTSTR nameCOMPort) {
+
+    int cch = SendMessageMainDlg(SERIAL_CHECK_EMPTY_PORT_NAME, SERIAL_CHECK_EMPTY_PORT_NAME_MSG);
+
+    if (!cch) {
+
+        return FALSE;
+    }
 
     LPCTSTR pref = TEXT("\\\\.\\");
 
@@ -165,17 +243,17 @@ BOOL COMPortClass::OpenCOMPortPrivate(LPTSTR nameCOMPort) {
         COMPort = nullptr;
         CoTaskMemFree(FileName);
 
-        TCHAR msg[] = TEXT("НЕ УДАЛОСЬ ОТКРЫТЬ ВЫБРАННЫЙ COM ПОРТ.");
-
-        SendMessageMainDlg(SERIAL_ERROR_OPEN_PORT, msg);
+        SendMessageMainDlg(SERIAL_ERROR_OPEN_PORT, SERIAL_ERROR_OPEN_PORT_MSG);
 
         return FALSE;
 
     }
 
-    TCHAR msg[] = TEXT("ВЫБРАННЫЙ COM ПОРТ УСПЕШНО ОТКРЫТ");
+    SendMessageMainDlg(SERIAL_OK_OPEN_PORT, SERIAL_OK_OPEN_PORT_MSG);
 
-    SendMessageMainDlg(SERIAL_OK_OPEN_PORT, msg);
+    SendMessageMainDlg(COMPORTLIST_DISABLED, EMPTY_MSG);
+
+    PortIsOpen = TRUE;
 
     CoTaskMemFree(FileName);
 
@@ -184,7 +262,7 @@ BOOL COMPortClass::OpenCOMPortPrivate(LPTSTR nameCOMPort) {
     return TRUE;
 }
 
-int COMPortClass::InitCOMPortList(int(*_callBackFunc)(HWND, BYTE*), HWND hDlg) {
+int COMPortClass::InitCOMPortList(int(*AddCOMPortList)(BYTE*)) {
 
     HKEY hKey = 0; //содержит дескриптор ветки реестра
     LSTATUS lResult;
@@ -231,7 +309,7 @@ int COMPortClass::InitCOMPortList(int(*_callBackFunc)(HWND, BYTE*), HWND hDlg) {
             continue;
         }
 
-        _callBackFunc(hDlg, COMPortName);
+        AddCOMPortList(COMPortName);
 
     }
 
@@ -239,7 +317,7 @@ int COMPortClass::InitCOMPortList(int(*_callBackFunc)(HWND, BYTE*), HWND hDlg) {
     CoTaskMemFree(COMPortName);
 
     RegValueName = nullptr;
-    COMPortName = nullptr;
+    COMPortName  = nullptr;
 
     RegCloseKey(hKey);
 
